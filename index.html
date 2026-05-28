@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CX Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: #f4f6f8; padding: 24px; color: #111827; }
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; background: white; padding: 16px 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e5e7eb; }
+        .header h1 { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+        .controls { display: flex; gap: 12px; align-items: center; }
+
+        select { padding: 10px 16px; font-size: 14px; border: 1px solid #d1d5db; border-radius: 8px; background: #f9fafb; color: #374151; cursor: pointer; min-width: 150px; max-width: 250px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; font-weight: 500; }
+        select:focus { outline: none; border-color: #3b82f6; background: white; }
+        select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .back-link { color: #3b82f6; cursor: pointer; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 4px; margin-bottom: 8px; width: fit-content;}
+        .back-link:hover { text-decoration: underline; }
+        .hidden { display: none !important; }
+
+        /* --- KPI CARDS --- */
+        .vp-kpi-grid, .portfolio-grid { display: grid; gap: 20px; margin-bottom: 24px; }
+        .vp-kpi-grid { grid-template-columns: repeat(4, 1fr); }
+        .portfolio-grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+        .vp-card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f3f4f6; cursor: pointer; transition: all 0.2s ease; position: relative; }
+        .vp-card.no-hover { cursor: default; }
+        .vp-card.no-hover:hover { transform: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .vp-card:hover { transform: translateY(-4px); box-shadow: 0 12px 20px -5px rgba(0,0,0,0.1); }
+        .vp-card.blue { background: linear-gradient(145deg, #ffffff 0%, #f0f9ff 100%); border-color: #e0f2fe; }
+        .vp-card.red { background: linear-gradient(145deg, #ffffff 0%, #fef2f2 100%); border-color: #fee2e2; }
+        .vp-card.orange { background: linear-gradient(145deg, #ffffff 0%, #fff7ed 100%); border-color: #ffedd5; }
+        .vp-card.green { background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%); border-color: #d1fae5; }
+        .vp-card.purple { background: linear-gradient(145deg, #ffffff 0%, #faf5ff 100%); border-color: #e9d5ff; }
+        .vp-card.active-card.blue { outline: 2px solid #3b82f6; outline-offset: 2px; }
+        .vp-card.active-card.red { outline: 2px solid #ef4444; outline-offset: 2px; }
+        .vp-card.active-card.orange { outline: 2px solid #f97316; outline-offset: 2px; }
+        .vp-card.active-card.purple { outline: 2px solid #8b5cf6; outline-offset: 2px; }
+
+        .vp-kpi-label { font-size: 13px; color: #4b5563; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;}
+        .vp-kpi-value { font-size: 36px; font-weight: 800; letter-spacing: -1px; display: flex; align-items: baseline; gap: 8px;}
+        .vp-kpi-sub { font-size: 13px; color: #6b7280; margin-top: 4px; font-weight: 500; }
+        .delta-badge { font-size: 14px; padding: 2px 8px; border-radius: 12px; font-weight: 700; }
+        .delta-up { background: #d1fae5; color: #047857; }
+        .delta-down { background: #fee2e2; color: #b91c1c; }
+
+        /* --- LAYOUT --- */
+        .vp-middle-split { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px; }
+        .brand-split { display: grid; grid-template-columns: 1fr 2fr; gap: 20px; margin-bottom: 24px; }
+        .panel { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e5e7eb; scroll-margin-top: 24px; margin-bottom: 24px;}
+        .panel-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; }
+        .clear-filter-btn { font-size: 13px; font-weight: 600; color: #3b82f6; cursor: pointer; padding: 4px 12px; border-radius: 6px; background: #eff6ff; transition: background 0.2s; }
+        .clear-filter-btn:hover { background: #dbeafe; }
+
+        /* Tables */
+        .data-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .data-table th { text-align: left; padding: 12px 16px; background: #f9fafb; font-size: 12px; color: #6b7280; text-transform: uppercase; font-weight: 600; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; z-index: 10;}
+        .data-table th:first-child { border-top-left-radius: 8px; }
+        .data-table th:last-child { border-top-right-radius: 8px; }
+        .data-table td { padding: 16px; border-bottom: 1px solid #f3f4f6; font-size: 14px; font-weight: 500; color: #111827; }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tbody tr.clickable-row { cursor: pointer; transition: background 0.1s; }
+        .data-table tbody tr.clickable-row:hover { background: #fcfcfc; }
+
+        /* Tags & Visuals */
+        .status-badge { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 20px; font-weight: 700; font-size: 12px; }
+        .status-badge.red { background: #fee2e2; color: #b91c1c; }
+        .status-badge.amber { background: #fef3c7; color: #b45309; }
+        .status-badge.green { background: #d1fae5; color: #047857; }
+        .risk-pill { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; display: inline-block; margin-bottom: 4px; margin-right: 4px; }
+        .risk-pill.orange { background: #ffedd5; color: #c2410c; }
+        .health-bar-container { display: flex; align-items: center; gap: 8px; }
+        .health-bar-bg { flex-grow: 1; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; min-width: 60px; max-width: 100px; }
+        .health-bar-fill { height: 100%; border-radius: 3px; }
+        .fill-red { background: #ef4444; }
+        .fill-amber { background: #f59e0b; }
+        .fill-green { background: #10b981; }
+
+        /* NPS band pills */
+        .nps-band-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; }
+        .nps-band-pill.promoter { background: #d1fae5; color: #047857; }
+        .nps-band-pill.passive  { background: #fef3c7; color: #b45309; }
+        .nps-band-pill.detractor{ background: #fee2e2; color: #b91c1c; }
+
+        /* Velocity badge */
+        .velocity-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 700; }
+        .velocity-badge.declining  { background: #fee2e2; color: #b91c1c; }
+        .velocity-badge.recovering { background: #d1fae5; color: #047857; }
+
+        /* --- TOOLTIPS --- */
+        .tooltip-wrapper { position: relative; display: inline-flex; align-items: center; gap: 4px; cursor: help; color: #6b7280; }
+        .tooltip-wrapper:hover { color: #3b82f6; }
+        .tooltip-text { visibility: hidden; width: 240px; background-color: #1f2937; color: #fff; text-align: left; border-radius: 8px; padding: 12px; position: absolute; z-index: 50; top: 130%; left: 50%; transform: translateX(-50%); font-size: 12px; font-weight: 500; line-height: 1.6; opacity: 0; transition: opacity 0.2s; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); pointer-events: none; }
+        .tooltip-text::after { content: ""; position: absolute; bottom: 100%; left: 50%; margin-left: -6px; border-width: 6px; border-style: solid; border-color: transparent transparent #1f2937 transparent; }
+        .tooltip-wrapper:hover .tooltip-text { visibility: visible; opacity: 1; }
+        .tooltip-text strong { color: #e5e7eb; display: block; margin-bottom: 4px; border-bottom: 1px solid #4b5563; padding-bottom: 4px;}
+
+        .kpi-tooltip { position: relative; display: inline-flex; align-items: center; gap: 5px; }
+        .kpi-tooltip .kpi-tip-icon { font-size: 10px; background: rgba(0,0,0,0.08); color: #6b7280; border-radius: 50%; width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; cursor: help; flex-shrink: 0; }
+        .kpi-tooltip .kpi-tip-text { visibility: hidden; width: 240px; background-color: #1f2937; color: #fff; text-align: left; border-radius: 8px; padding: 12px; position: absolute; z-index: 100; top: 130%; left: 0; font-size: 12px; font-weight: 400; line-height: 1.6; opacity: 0; transition: opacity 0.2s; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.15); pointer-events: none; white-space: normal; }
+        .kpi-tooltip .kpi-tip-text::after { content: ""; position: absolute; bottom: 100%; left: 12px; border-width: 6px; border-style: solid; border-color: transparent transparent #1f2937 transparent; }
+        .kpi-tooltip:hover .kpi-tip-text { visibility: visible; opacity: 1; }
+
+        /* --- BRAND --- */
+        .brand-header-block { display: flex; align-items: center; gap: 24px; margin-bottom: 24px; padding: 24px; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e5e7eb; }
+        .brand-logo-box { width: 80px; height: 80px; border-radius: 12px; border: 1px solid #e5e7eb; display: flex; justify-content: center; align-items: center; overflow: hidden; background: #f9fafb; padding: 8px; flex-shrink: 0; }
+        .brand-logo-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .brand-info { flex-grow: 1; }
+        .brand-info h2 { font-size: 28px; font-weight: 800; color: #111827; margin-bottom: 8px; }
+        .brand-meta { display: flex; gap: 20px; flex-wrap: wrap; color: #4b5563; font-size: 14px; font-weight: 500; }
+        .brand-meta span strong { color: #111827; }
+        .brand-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .gap-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+        .gap-tile { border-radius: 10px; padding: 16px 12px; text-align: center; border: 1px solid transparent; }
+        .gap-tile-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 10px; }
+        .gap-tile-value { font-size: 32px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+        .gap-tile-sub { font-size: 11px; margin-top: 6px; font-weight: 600; }
+        .gap-tile.good { background: #f0fdf4; border-color: #bbf7d0; }
+        .gap-tile.good .gap-tile-label { color: #065f46; }
+        .gap-tile.good .gap-tile-value { color: #059669; }
+        .gap-tile.good .gap-tile-sub { color: #6ee7b7; }
+        .gap-tile.warn { background: #fffbeb; border-color: #fde68a; }
+        .gap-tile.warn .gap-tile-label { color: #92400e; }
+        .gap-tile.warn .gap-tile-value { color: #d97706; }
+        .gap-tile.warn .gap-tile-sub { color: #fcd34d; }
+        .gap-tile.crit { background: #fef2f2; border-color: #fecaca; }
+        .gap-tile.crit .gap-tile-label { color: #991b1b; }
+        .gap-tile.crit .gap-tile-value { color: #dc2626; }
+        .gap-tile.crit .gap-tile-sub { color: #fca5a5; }
+        .activity-risk-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .activity-risk-badge.critical { background: #fee2e2; color: #b91c1c; }
+        .activity-risk-badge.warning { background: #fef3c7; color: #b45309; }
+        .activity-risk-badge.ok { background: #d1fae5; color: #047857; }
+        .activity-risk-badge.crit { background: #fee2e2; color: #b91c1c; }
+        .activity-risk-badge.warn { background: #fef3c7; color: #b45309; }
+        .acc-context-strip { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: #6b7280; margin-bottom: 12px; }
+        .acc-context-strip span strong { color: #374151; }
+        .acc-context-strip .ctx-item strong { color: #374151; font-weight: 700; }
+        .activity-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+        .activity-row:last-child { border-bottom: none; }
+        .activity-row-label { font-size: 13px; color: #6b7280; font-weight: 600; }
+        .activity-row-value { font-size: 13px; font-weight: 700; color: #111827; }
+        .activity-row-value.stale { color: #dc2626; }
+        .activity-row-value.warn  { color: #d97706; }
+        .adoption-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid #f3f4f6; }
+        .adoption-row:last-child { border-bottom: none; }
+        .adoption-label { font-size: 13px; font-weight: 600; color: #374151; width: 130px; flex-shrink: 0; }
+        .adoption-bar-bg { flex-grow: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+        .adoption-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+        .adoption-pct { font-size: 13px; font-weight: 700; color: #111827; width: 38px; text-align: right; flex-shrink: 0; }
+        .adoption-count { font-size: 12px; color: #9ca3af; width: 70px; text-align: right; flex-shrink: 0; }
+        .gap-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #f3f4f6; }
+        .gap-row:last-child { border-bottom: none; }
+        .gap-label { font-size: 13px; font-weight: 600; color: #374151; width: 160px; flex-shrink: 0; }
+        .gap-bar-bg { flex-grow: 1; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+        .gap-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+        .gap-pct { font-size: 13px; font-weight: 700; width: 38px; text-align: right; flex-shrink: 0; }
+        .brand-bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+
+        /* --- TABS --- */
+        .tabs { margin-bottom: 24px; }
+        .tab-buttons { display: flex; gap: 8px; border-bottom: 2px solid #e5e7eb; margin-bottom: 16px; }
+        .tab-button { padding: 12px 24px; background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; font-size: 14px; font-weight: 600; color: #6b7280; transition: all 0.2s; margin-bottom: -2px; }
+        .tab-button.active { border-bottom-color: #3b82f6; color: #1e40af; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .search-container { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .search-input { padding: 10px 16px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+        .search-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+
+        /* --- ACCOUNT --- */
+        .health-card { padding: 24px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .health-card.red { background: linear-gradient(145deg, #ffffff 0%, #fef2f2 100%); border: 1px solid #fee2e2; border-left: 4px solid #dc2626; }
+        .health-card.amber { background: linear-gradient(145deg, #ffffff 0%, #fffbeb 100%); border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; }
+        .health-card.green { background: linear-gradient(145deg, #ffffff 0%, #f0fdf4 100%); border: 1px solid #d1fae5; border-left: 4px solid #10b981; }
+        .health-header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; justify-content: space-between; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; border: 1px solid #e5e7eb; padding: 16px; border-radius: 8px; }
+        .stat-label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-value { font-size: 28px; font-weight: 700; color: #111827; }
+        .stat-value.critical { color: #dc2626; }
+        .stat-value.warning { color: #f59e0b; }
+        .stat-value.good { color: #10b981; }
+        .acc-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        .acc-table th { text-align: left; padding: 12px; background: #f9fafb; font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+        .acc-table td { padding: 12px; border-bottom: 1px solid #f3f4f6; font-size: 14px; color: #374151; }
+        .status-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+        .status-indicator.enabled-used { background: #d1fae5; color: #059669; }
+        .status-indicator.enabled-unused { background: #fee2e2; color: #dc2626; }
+        .status-indicator.disabled { background: #f3f4f6; color: #6b7280; }
+        .quality-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        .metric-item { background: #f9fafb; padding: 16px; border-radius: 6px; border-left: 3px solid #d1d5db; }
+        .metric-item.warning { border-left-color: #f59e0b; background: #fffbeb; }
+        .metric-item.critical { border-left-color: #ef4444; background: #fef2f2; }
+        .metric-item.good { border-left-color: #10b981; background: #f0fdf4; }
+        .metric-label { font-size: 13px; color: #6b7280; margin-bottom: 8px; }
+        .metric-value { font-size: 24px; font-weight: 700; color: #111827; }
+
+        /* NPS Panel */
+        .nps-panel { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .nps-panel-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f3f4f6; }
+        .nps-score-big { font-size: 48px; font-weight: 800; letter-spacing: -2px; line-height: 1; }
+        .nps-score-big.promoter  { color: #047857; }
+        .nps-score-big.passive   { color: #b45309; }
+        .nps-score-big.detractor { color: #b91c1c; }
+        .nps-score-big.none      { color: #9ca3af; }
+        .nps-verbatim { background: #f9fafb; border-left: 3px solid #d1d5db; border-radius: 4px; padding: 12px 16px; font-size: 13px; color: #374151; line-height: 1.6; font-style: italic; margin-top: 12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <div id="backButton" class="back-link hidden" onclick="navigateBack()">← Back</div>
+            <h1 id="pageTitle">🌍 Global Executive Summary</h1>
+        </div>
+        <div class="controls">
+            <select id="brandSelect" onchange="handleBrandSelection()">
+                <option value="">🏢 View by Brand...</option>
+            </select>
+            <select id="aeSelect" onchange="handleDropdownChange()">
+                <option value="">Loading Dashboard...</option>
+            </select>
+            <select id="accountSelect" onchange="loadAccount()" class="hidden">
+                <option value="">Select an account</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="loadingState" style="text-align: center; padding: 100px 20px; color: #6b7280;">
+        <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+        <h3 style="color: #111827; margin-bottom: 8px;">Loading your portfolio...</h3>
+        <p>Pulling live account data.</p>
+    </div>
+
+    <!-- ===================== VP DASHBOARD ===================== -->
+    <div id="vpDashboard" class="hidden">
+        <div class="vp-kpi-grid">
+            <div class="vp-card blue" id="vp-card-all" onclick="filterVpTable('all')">
+                <div class="vp-kpi-label">
+                    <span class="kpi-tooltip">Total Managed ARR
+                        <span class="kpi-tip-icon">?</span>
+                        <span class="kpi-tip-text">Combined ARR across all accounts actively managed by an Account Manager.</span>
+                    </span>
+                </div>
+                <div class="vp-kpi-value" id="vpTotalArr" style="color: #0f172a;">--</div>
+                <div class="vp-kpi-sub">Click to view all active accounts</div>
+            </div>
+
+            <div class="vp-card red" id="vp-card-red" onclick="filterVpTable('red')">
+                <div class="vp-kpi-label">
+                    <span class="kpi-tooltip">ARR at Risk
+                        <span class="kpi-tip-icon">?</span>
+                        <span class="kpi-tip-text">Revenue tied to accounts with Critical health (below 40) or an outstanding billing balance.</span>
+                    </span>
+                </div>
+                <div class="vp-kpi-value" id="vpRedArr" style="color: #b91c1c;">--</div>
+                <div class="vp-kpi-sub">Click to view critical &amp; past-due accounts</div>
+            </div>
+
+            <div class="vp-card orange" id="vp-card-zeroroi" onclick="filterVpTable('zeroroi')">
+                <div class="vp-kpi-label">
+                    <span class="kpi-tooltip">Zero-ROI ARR
+                        <span class="kpi-tip-icon">?</span>
+                        <span class="kpi-tip-text">ARR from accounts where 70%+ of locations have no Indeed apps or no active jobs. Paying but not realizing value.</span>
+                    </span>
+                </div>
+                <div class="vp-kpi-value" id="vpZeroRoiArr" style="color: #c2410c;">--</div>
+                <div class="vp-kpi-sub">Accounts paying but not getting value</div>
+            </div>
+
+            <div class="vp-card purple" id="vp-card-detractors" onclick="filterVpTable('detractors')">
+                <div class="vp-kpi-label">
+                    <span class="kpi-tooltip">Detractor Count
+                        <span class="kpi-tip-icon">?</span>
+                        <span class="kpi-tip-text">Accounts with an NPS score of 0–6 recorded in the last 60 days. High detractor counts are leading churn indicators.</span>
+                    </span>
+                </div>
+                <div class="vp-kpi-value" id="vpDetractorCount" style="color: #7c3aed;">--</div>
+                <div class="vp-kpi-sub">NPS 0–6 in last 60 days</div>
+            </div>
+        </div>
+
+        <div class="vp-middle-split">
+            <div class="panel">
+                <div class="panel-title"><span>📈 Portfolio Health Trajectory</span><span style="font-size:12px;font-weight:500;color:#6b7280;">(Last 8 Weeks)</span></div>
+                <div style="height:300px;width:100%;"><canvas id="healthTrendChart"></canvas></div>
+            </div>
+            <div class="panel">
+                <div class="panel-title"><span>⚠️ Risk Concentration by AM</span></div>
+                <div style="overflow-y:auto;max-height:300px;">
+                    <table class="data-table">
+                        <thead><tr>
+                            <th>Account Manager</th>
+                            <th style="text-align:right;">ARR at Risk</th>
+                            <th style="text-align:center;">
+                                <span class="tooltip-wrapper" style="justify-content:center;">Zero-ROI Accts
+                                    <span style="font-size:10px;background:#e5e7eb;color:#4b5563;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">?</span>
+                                    <span class="tooltip-text" style="left:auto;right:0;transform:none;">Accounts where 70%+ of locations have no Indeed apps or no active jobs.</span>
+                                </span>
+                            </th>
+                        </tr></thead>
+                        <tbody id="vpLeaderboardBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="vpTablePanel">
+            <div class="panel-title">
+                <span id="vpTableTitle">🚨 Top At-Risk Accounts by ARR</span>
+                <span id="vpClearFilter" class="clear-filter-btn hidden" onclick="filterVpTable('default')">✕ Clear Filter</span>
+            </div>
+            <table class="data-table">
+                <thead><tr>
+                    <th>Account Name</th>
+                    <th>ARR</th>
+                    <th>Assigned AM</th>
+                    <th>Repeat Detractor</th>
+                    <th>Status / Blockers</th>
+                </tr></thead>
+                <tbody id="vpEscalationsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ===================== BRAND DASHBOARD ===================== -->
+    <div id="brandDashboard" class="hidden">
+        <div class="brand-header-block">
+            <div class="brand-logo-box"><img id="bLogo" src="" alt="Brand Logo" onerror="this.style.display='none'"></div>
+            <div class="brand-info">
+                <h2 id="bName">Brand Name</h2>
+                <div class="brand-meta">
+                    <span>Scale: <strong id="bFranchiseCount">0</strong> franchisees | <strong id="bTotalArr">$0</strong> total ARR</span>
+                    <span>•</span>
+                    <span>Customer Since: <strong id="bTenure">YYYY</strong></span>
+                    <span>•</span>
+                    <span>Strategic Owner: <strong id="bOwner">Name</strong></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="brand-kpi-grid">
+            <div class="vp-card no-hover blue">
+                <div class="vp-kpi-label"><span class="kpi-tooltip">Total Managed ARR<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">ARR from franchisees actively managed by an AM.</span></span></div>
+                <div class="vp-kpi-value" id="bManagedArr" style="color:#0f172a;">--</div>
+                <div class="vp-kpi-sub" id="bUnmanagedText">--</div>
+            </div>
+            <div class="vp-card no-hover red">
+                <div class="vp-kpi-label"><span class="kpi-tooltip">ARR at Risk<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Revenue tied to franchisees in Critical or Red health.</span></span></div>
+                <div class="vp-kpi-value" id="bRedArr" style="color:#b91c1c;">--</div>
+                <div class="vp-kpi-sub" id="bRedArrSub">-- franchisees in critical health</div>
+            </div>
+            <div class="vp-card no-hover orange">
+                <div class="vp-kpi-label"><span class="kpi-tooltip">Avg Health Score<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Mean health score across all active managed franchisees.</span></span></div>
+                <div class="vp-kpi-value" id="bAvgHealth" style="color:#c2410c;">--</div>
+                <div class="vp-kpi-sub" id="bAvgHealthSub">across all franchisees</div>
+            </div>
+        </div>
+
+        <div class="brand-bottom-grid" style="grid-template-columns:1fr 2fr;">
+            <div class="panel" style="margin-bottom:0;">
+                <div class="panel-title">Health Distribution</div>
+                <div style="height:200px;width:100%;position:relative;"><canvas id="brandDonutChart"></canvas></div>
+                <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f3f4f6;">
+                    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:6px;"></span>Healthy</span><span id="bHealthyCount" style="color:#059669;">--</span></div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;margin-bottom:6px;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:6px;"></span>At Risk</span><span id="bAmberCount" style="color:#d97706;">--</span></div>
+                    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:6px;"></span>Critical</span><span id="bRedCount" style="color:#dc2626;">--</span></div>
+                </div>
+            </div>
+            <div class="panel" style="padding:0;margin-bottom:0;">
+                <div class="panel-title" style="padding:20px 20px 0 20px;border-bottom:none;">🔥 Franchisee Heat Table <span style="font-size:12px;font-weight:500;color:#6b7280;">(sorted by ARR)</span></div>
+                <div style="overflow-y:auto;max-height:360px;padding:0 20px 20px 20px;">
+                    <table class="data-table" style="margin-top:8px;">
+                        <thead><tr><th>Franchisee</th><th>Health</th><th>ARR</th><th>Zero-ROI?</th><th>Primary Risk</th></tr></thead>
+                        <tbody id="bHeatTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="brand-bottom-grid" style="margin-top:20px;">
+            <div class="panel" style="margin-bottom:0;">
+                <div class="panel-title"><span>📦 Feature Adoption Across Brand</span><span style="font-size:12px;font-weight:500;color:#6b7280;">% of franchisees with feature active</span></div>
+                <div id="bAdoptionRows"></div>
+            </div>
+            <div class="panel" style="margin-bottom:0;">
+                <div class="panel-title"><span>⚙️ Configuration Gaps</span><span style="font-size:12px;font-weight:500;color:#6b7280;">% of locations affected across brand</span></div>
+                <div id="bGapRows"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== AM PORTFOLIO ===================== -->
+    <div id="amPortfolio" class="hidden panel" style="background:transparent;border:none;box-shadow:none;padding:0;">
+        <div class="portfolio-grid">
+            <div class="vp-card blue am-card" id="am-card-all" onclick="filterAMTable('all')" style="padding:20px;">
+                <div class="vp-kpi-label">Avg Health Score</div>
+                <div class="vp-kpi-value" id="portAvgHealth">--</div>
+                <div class="vp-kpi-sub">Across all accounts</div>
+            </div>
+            <div class="vp-card red am-card" id="am-card-zero_roi" onclick="filterAMTable('zero_roi')" style="padding:20px;">
+                <div class="vp-kpi-label"><span class="kpi-tooltip">Zero-ROI Accounts<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Accounts where 70%+ of locations have no Indeed applications or no active jobs.</span></span></div>
+                <div class="vp-kpi-value" id="portZeroRoi" style="color:#b91c1c;">--</div>
+                <div class="vp-kpi-sub">No ROI being realized</div>
+            </div>
+            <div class="vp-card orange am-card" id="am-card-disconnects" onclick="filterAMTable('disconnects')" style="padding:20px;">
+                <div class="vp-kpi-label"><span class="kpi-tooltip">Satisfaction Gaps<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Accounts with a healthy score (≥75) but low NPS (below 6) or high support volume.</span></span></div>
+                <div class="vp-kpi-value" id="portDisconnects" style="color:#c2410c;">--</div>
+                <div class="vp-kpi-sub">High score, low satisfaction</div>
+            </div>
+            <div class="vp-card no-hover" style="display:flex;gap:16px;align-items:center;padding:16px;">
+                <div style="flex-grow:1;">
+                    <div class="vp-kpi-label">ARR Health Split</div>
+                    <div style="font-size:13px;margin-top:8px;line-height:1.8;color:#374151;">
+                        <div style="display:flex;justify-content:space-between;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:4px;"></span>Healthy</span><span id="arrGreen" style="font-weight:600;">$0</span></div>
+                        <div style="display:flex;justify-content:space-between;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;margin-right:4px;"></span>At Risk</span><span id="arrAmber" style="font-weight:600;">$0</span></div>
+                        <div style="display:flex;justify-content:space-between;"><span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ef4444;margin-right:4px;"></span>Critical</span><span id="arrRed" style="font-weight:600;color:#dc2626;">$0</span></div>
+                    </div>
+                </div>
+                <div style="width:80px;height:80px;position:relative;"><canvas id="amDonutChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="tabs">
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchPortTab(0)">📂 All Accounts</button>
+                    <button class="tab-button" onclick="switchPortTab(1)">🚨 Firefighting</button>
+                    <button class="tab-button" onclick="switchPortTab(2)">💡 Product Opportunities</button>
+                </div>
+                <div class="tab-content active" id="portTab0">
+                    <div class="search-container">
+                        <div style="display:flex;gap:12px;">
+                            <input type="text" id="accountSearch" class="search-input" style="width:280px;" placeholder="🔍 Search accounts..." onkeyup="renderAMTable()">
+                            <input type="number" id="arrSearch" class="search-input" style="width:160px;" placeholder="💰 Min ARR ($)" onkeyup="renderAMTable()">
+                            <button id="amClearFilter" class="clear-filter-btn hidden" style="border:none;margin-left:8px;" onclick="filterAMTable('all')">✕ Clear Filter</button>
+                        </div>
+                    </div>
+                    <table class="data-table">
+                        <thead><tr>
+                            <th class="sortable" onclick="sortAM('account_name')" id="th_account_name">Account Name ↕</th>
+                            <th class="sortable" onclick="sortAM('health_score')" id="th_health_score">Health Score ↕</th>
+                            <th class="sortable" onclick="sortAM('health_status')" id="th_health_status">Status ↕</th>
+                            <th class="sortable" onclick="sortAM('arr')" id="th_arr">ARR ↕</th>
+                        </tr></thead>
+                        <tbody id="amTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="tab-content" id="portTab1"><div id="firefightingList"></div></div>
+                <div class="tab-content" id="portTab2"><div id="opportunityList"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== ACCOUNT DETAIL ===================== -->
+    <div id="dashboardContent" class="hidden panel" style="background:transparent;box-shadow:none;border:none;padding:0;">
+
+        <!-- Health Card -->
+        <div class="health-card" id="healthCard">
+            <div class="health-header">
+                <div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                        <div class="status-badge" id="statusBadge"><span id="statusIcon">⚠️</span> <span id="statusText">CRITICAL</span></div>
+                        <span id="accActivityRiskBadge"></span>
+                        <span id="accVelocityBadge"></span>
+                    </div>
+                    <h2 id="accNameDisplay" style="margin:0 0 6px 0;font-size:24px;font-weight:800;color:#111827;">Account Name</h2>
+                    <div class="acc-context-strip" id="accContextStrip"></div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:center;">
+                    <div style="position:relative;width:120px;height:60px;">
+                        <canvas id="accHealthGauge"></canvas>
+                        <div id="healthScore" style="position:absolute;bottom:0;left:0;width:100%;text-align:center;font-size:28px;font-weight:800;color:#111827;line-height:1;">--</div>
+                    </div>
+                    <div class="score-label" style="margin-top:8px;position:relative;z-index:100;">
+                        <div class="tooltip-wrapper">
+                            Health Score <span style="font-size:10px;background:#e5e7eb;color:#4b5563;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">?</span>
+                            <span class="tooltip-text">
+                                <strong>Score Breakdown</strong>
+                                • Pipeline Health (Indeed apps): 25%<br>
+                                • Feature Adoption: 25%<br>
+                                • NPS Trend: 20%<br>
+                                • Billing Health: 15%<br>
+                                • Pendo Engagement: 15%<br><br>
+                                <span style="color:#9ca3af;">Below 40 = Critical. Above 75 = Healthy.</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Critical Metrics Strip -->
+        <div class="stats-grid" id="criticalMetrics" style="margin-top:0;margin-bottom:24px;"></div>
+
+        <!-- NPS Panel -->
+        <div class="nps-panel" id="npsPanel">
+            <div class="panel-title" style="margin-bottom:16px;">📊 NPS Signal</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start;">
+                <div style="text-align:center;min-width:100px;">
+                    <div class="nps-score-big none" id="npsScoreBig">—</div>
+                    <div style="margin-top:8px;" id="npsBandPill"></div>
+                    <div style="font-size:12px;color:#9ca3af;margin-top:6px;" id="npsDaysSince"></div>
+                </div>
+                <div>
+                    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+                        <span id="npsTrendLabel" style="font-size:13px;color:#6b7280;font-weight:600;"></span>
+                        <span id="npsStddevLabel" style="font-size:13px;color:#9ca3af;"></span>
+                    </div>
+                    <div class="nps-verbatim" id="npsVerbatim" style="display:none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="panel">
+            <div class="tabs">
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchAccTab(0)">📈 ROI &amp; Outcomes</button>
+                    <button class="tab-button" onclick="switchAccTab(1)">⚙️ Platform Health</button>
+                    <button class="tab-button" onclick="switchAccTab(2)">🤝 Relationship</button>
+                </div>
+
+                <!-- TAB 0: ROI & Outcomes -->
+                <div class="tab-content active" id="accTab0">
+                    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
+                        <div class="stat-card">
+                            <div class="stat-label"><span class="kpi-tooltip" style="font-size:12px;">Hire Rate<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Total hires divided by total interviews. Below 20% may indicate candidate quality issues.</span></span></div>
+                            <div class="stat-value" id="accHireRate">--%</div>
+                            <div id="accHireRateSub" style="font-size:12px;color:#6b7280;margin-top:4px;">-- hires / -- interviews</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Applications (30d)</div>
+                            <div class="stat-value" id="accApps30d">--</div>
+                            <div id="accApps30dSub" style="font-size:12px;color:#6b7280;margin-top:4px;">total applicants this month</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label"><span class="kpi-tooltip" style="font-size:12px;">Active Locations<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Locations with at least one active job posting.</span></span></div>
+                            <div class="stat-value" id="accActiveLocs">--</div>
+                            <div id="accActiveLocsSub" style="font-size:12px;color:#6b7280;margin-top:4px;">of -- total locations</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Open Jobs</div>
+                            <div class="stat-value" id="accOpenJobs">--</div>
+                            <div style="font-size:12px;color:#6b7280;margin-top:4px;">currently live</div>
+                        </div>
+                    </div>
+                    <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Interview Pipeline</h4>
+                    <div class="quality-metrics" style="margin-bottom:28px;" id="interviewMetrics"></div>
+                    <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Billing</h4>
+                    <div id="supportBilling"></div>
+                </div>
+
+                <!-- TAB 1: Platform Health -->
+                <div class="tab-content" id="accTab1">
+                    <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Feature Adoption</h4>
+                    <table class="acc-table" style="margin-bottom:28px;">
+                        <thead><tr><th>Feature</th><th>Enabled</th><th>Status</th><th>Activity (Last 90 Days)</th></tr></thead>
+                        <tbody id="featureTable"></tbody>
+                    </table>
+                    <h4 style="margin-bottom:6px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Location Configuration Gaps</h4>
+                    <p style="font-size:13px;color:#6b7280;margin-bottom:16px;">% of locations missing each configuration. Red = &gt;50%, Amber = &gt;25%.</p>
+                    <div class="gap-tiles" id="accGapTiles"></div>
+                </div>
+
+                <!-- TAB 2: Relationship -->
+                <div class="tab-content" id="accTab2">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                        <!-- Left -->
+                        <div>
+                            <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">AM Context</h4>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+                                <div class="stat-card">
+                                    <div class="stat-label">CX Gut Score</div>
+                                    <div class="stat-value" id="accCxScore">--</div>
+                                    <div style="font-size:12px;color:#6b7280;margin-top:4px;">manual AM assessment</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-label">Calculated Score</div>
+                                    <div class="stat-value" id="accCalcScore">--</div>
+                                    <div style="font-size:12px;color:#6b7280;margin-top:4px;">system-derived</div>
+                                </div>
+                            </div>
+
+                            <!-- Gut Score Write Form -->
+                            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:20px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                    <strong style="color:#111827;font-size:13px;">Update Gut Score</strong>
+                                    <span id="gutScoreStatus" style="font-weight:600;font-size:12px;"></span>
+                                </div>
+                                <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Record your current sentiment for this account (0 = worst, 10 = best).</p>
+                                <div style="display:flex;flex-direction:column;gap:8px;">
+                                    <input type="number" id="gutScoreInput" min="0" max="10" placeholder="Score (0–10)" style="padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;width:100%;">
+                                    <textarea id="gutScoreNotes" placeholder="Notes (optional)..." rows="2" style="padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;resize:vertical;font-family:inherit;"></textarea>
+                                    <button onclick="submitGutScore()" id="gutScoreBtn" style="background:#3b82f6;color:white;border:none;padding:10px 16px;border-radius:6px;font-weight:600;cursor:pointer;transition:background 0.2s;">Save Gut Score</button>
+                                </div>
+                            </div>
+
+                            <h4 style="margin-bottom:10px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Engagement Timeline</h4>
+                            <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;" id="accActivityTimeline">--</div>
+                        </div>
+
+                        <!-- Right -->
+                        <div>
+                            <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Escalation</h4>
+                            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                                    <strong style="color:#111827;font-size:13px;">Escalate This Account</strong>
+                                    <span id="escStatus" style="color:#059669;font-weight:600;font-size:12px;"></span>
+                                </div>
+                                <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Flag accounts that need executive attention. Escalated accounts appear on the Global Summary.</p>
+                                <div style="display:flex;flex-direction:column;gap:8px;">
+                                    <input type="text" id="escalationInput" placeholder="e.g., HQ is refusing to renew without a discount..." style="padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;">
+                                    <button onclick="submitEscalation()" id="escBtn" style="background:#ef4444;color:white;border:none;padding:10px 16px;border-radius:6px;font-weight:600;cursor:pointer;transition:background 0.2s;">Escalate to Exec View</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let allAccounts = {};
+    let vpData = {};
+    let brandData = {};
+    let currentAEAccounts = [];
+    let sortColumn = 'arr';
+    let sortAscending = false;
+    let currentAMFilter = 'all';
+    let trendChartInstance = null;
+    let brandDonutChartInstance = null;
+    let amDonutChartInstance = null;
+    let accGaugeChartInstance = null;
+
+    // ===================== DATA FETCH =====================
+    function initApp() {
+        fetch('/api/dashboard')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('loadingState').classList.add('hidden');
+                allAccounts = data.accounts;
+                vpData = data.vpData;
+                brandData = data.brands || {};
+
+                const ams = [...new Set(Object.values(allAccounts).map(a => a.ae).filter(Boolean))].sort();
+                const aeSelect = document.getElementById('aeSelect');
+                aeSelect.innerHTML = '<option value="VP">🌍 Global Executive View</option>' +
+                    ams.map(am => `<option value="${am}">👤 ${am}'s Portfolio</option>`).join('');
+
+                const brandNames = Object.keys(brandData).sort();
+                const bSelect = document.getElementById('brandSelect');
+                bSelect.innerHTML = '<option value="">🏢 View by Brand...</option>' +
+                    brandNames.map(b => `<option value="${b}">${b} Portfolio</option>`).join('');
+
+                loadVPDashboard();
+            })
+            .catch(err => {
+                document.getElementById('loadingState').innerHTML =
+                    `<div style="font-size:48px;margin-bottom:16px;">⚠️</div><h3 style="color:#b91c1c;">Failed to load dashboard</h3><p style="margin-top:8px;color:#6b7280;">${err.message}</p>`;
+            });
+    }
+
+    initApp();
+
+    function getAccountsArray() {
+        return Object.entries(allAccounts).map(([id, acc]) => ({ id, ...acc }));
+    }
+
+    function formatMoney(amount) {
+        if (amount >= 1000000) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount / 1000000) + 'M';
+        if (amount >= 1000) return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount / 1000) + 'k';
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount || 0);
+    }
+
+    function isZeroRoi(acc) {
+        return (acc.perc_no_indeed > 70 || acc.perc_no_active_jobs > 70);
+    }
+
+    function isRepeatDetractor(acc) {
+        return acc.nps_latest_band === 'detractor' && (acc.nps_prior_score != null && acc.nps_prior_score <= 6);
+    }
+
+    // ===================== NAVIGATION =====================
+    function hideAllViews() {
+        ['vpDashboard','brandDashboard','amPortfolio','dashboardContent'].forEach(id =>
+            document.getElementById(id).classList.add('hidden'));
+        document.getElementById('accountSelect').classList.add('hidden');
+        document.getElementById('backButton').classList.add('hidden');
+    }
+
+    function handleBrandSelection() {
+        const bName = document.getElementById('brandSelect').value;
+        if (bName === '') { document.getElementById('aeSelect').value = 'VP'; loadVPDashboard(); }
+        else { document.getElementById('aeSelect').value = ''; loadBrandDashboard(bName); }
+    }
+
+    function handleDropdownChange() {
+        const sel = document.getElementById('aeSelect').value;
+        document.getElementById('brandSelect').value = '';
+        if (sel === 'VP' || sel === '') loadVPDashboard();
+        else loadAMPortfolio(sel);
+    }
+
+    function navigateBack() {
+        if (!document.getElementById('dashboardContent').classList.contains('hidden')) {
+            if (document.getElementById('brandSelect').value !== '') loadBrandDashboard(document.getElementById('brandSelect').value);
+            else if (document.getElementById('aeSelect').value !== '' && document.getElementById('aeSelect').value !== 'VP') loadAMPortfolio(document.getElementById('aeSelect').value);
+            else loadVPDashboard();
+        } else {
+            document.getElementById('brandSelect').value = '';
+            document.getElementById('aeSelect').value = 'VP';
+            loadVPDashboard();
+        }
+    }
+
+    // ===================== VP DASHBOARD =====================
+    function loadVPDashboard() {
+        hideAllViews();
+        document.getElementById('vpDashboard').classList.remove('hidden');
+        document.getElementById('pageTitle').innerText = '🌍 Global Executive Summary';
+        document.getElementById('aeSelect').value = 'VP';
+
+        document.getElementById('vpTotalArr').innerText = formatMoney(vpData.totalManagedArr);
+        document.getElementById('vpRedArr').innerText = formatMoney(vpData.revenueInRed);
+
+        const allAccArray = getAccountsArray();
+        const zeroRoiArr = allAccArray.filter(isZeroRoi).reduce((s, a) => s + (a.arr || 0), 0);
+        document.getElementById('vpZeroRoiArr').innerText = formatMoney(zeroRoiArr);
+
+        const detractorCount = allAccArray.filter(a => a.nps_latest_band === 'detractor').length;
+        document.getElementById('vpDetractorCount').innerText = detractorCount;
+
+        // Trend chart
+        if (trendChartInstance) trendChartInstance.destroy();
+        const ctx = document.getElementById('healthTrendChart').getContext('2d');
+        const histData = (vpData.history && vpData.history.length) ? vpData.history : [{ date: 'No Data Yet', greenArr: 0, amberArr: 0, redArr: 0 }];
+        trendChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: histData.map(h => h.date), datasets: [
+                { label: 'Critical ARR', data: histData.map(h => h.redArr), backgroundColor: '#ef4444', borderRadius: 4 },
+                { label: 'At-Risk ARR',  data: histData.map(h => h.amberArr), backgroundColor: '#f59e0b', borderRadius: 4 },
+                { label: 'Healthy ARR',  data: histData.map(h => h.greenArr), backgroundColor: '#10b981', borderRadius: 4 },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false,
+                scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, border: { display: false }, ticks: { callback: v => '$' + (v/1000) + 'k' } } },
+                plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } }
+            }
+        });
+
+        // AM leaderboard
+        const amZeroRoi = {};
+        allAccArray.forEach(a => { if (!a.ae) return; amZeroRoi[a.ae] = (amZeroRoi[a.ae] || 0) + (isZeroRoi(a) ? 1 : 0); });
+        const amArray = Object.keys(vpData.amStats || {}).map(ae => ({
+            name: ae, redArr: vpData.amStats[ae].redArr, zeroRoiCount: amZeroRoi[ae] || 0
+        })).sort((a, b) => b.redArr - a.redArr);
+
+        document.getElementById('vpLeaderboardBody').innerHTML = amArray.map(am => `
+            <tr>
+                <td style="font-weight:600;">${am.name}</td>
+                <td style="text-align:right;color:#b91c1c;font-weight:700;">${formatMoney(am.redArr)}</td>
+                <td style="text-align:center;"><span style="background:${am.zeroRoiCount > 3 ? '#fee2e2' : '#f3f4f6'};color:${am.zeroRoiCount > 3 ? '#b91c1c' : '#4b5563'};padding:4px 12px;border-radius:12px;font-weight:700;">${am.zeroRoiCount}</span></td>
+            </tr>`).join('');
+
+        filterVpTable('default', false);
+    }
+
+    function filterVpTable(filterType, scroll = true) {
+        document.querySelectorAll('.vp-card').forEach(c => c.classList.remove('active-card'));
+        if (filterType !== 'default') {
+            const el = document.getElementById('vp-card-' + filterType);
+            if (el) el.classList.add('active-card');
+            document.getElementById('vpClearFilter').classList.remove('hidden');
+        } else {
+            document.getElementById('vpClearFilter').classList.add('hidden');
+        }
+
+        const tbody = document.getElementById('vpEscalationsBody');
+        const title = document.getElementById('vpTableTitle');
+        const allAccArray = getAccountsArray();
+        let filtered = [];
+
+        function repeatDetectorCell(acc) {
+            return isRepeatDetractor(acc)
+                ? '<span style="background:#faf5ff;color:#7c3aed;padding:3px 8px;border-radius:6px;font-size:12px;font-weight:700;">⚠ Yes</span>'
+                : '<span style="color:#9ca3af;font-size:12px;">—</span>';
+        }
+
+        if (filterType === 'default') {
+            title.innerHTML = '🚨 Top At-Risk Accounts by ARR';
+            const top5 = allAccArray.filter(a => a.health_status === 'red' || a.has_balance || a.manual_escalation).sort((a,b) => b.arr - a.arr).slice(0, 5);
+            if (top5.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;">No critical escalations right now. 🎉</td></tr>';
+            } else {
+                tbody.innerHTML = top5.map(acc => {
+                    let blockers = [];
+                    if (acc.manual_escalation) blockers.push('🔥 ESCALATED: ' + acc.manual_escalation);
+                    if (acc.has_balance) blockers.push(`💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}`);
+                    if (acc.perc_no_indeed > 0) blockers.push(`${acc.perc_no_indeed}% locs missing Indeed`);
+                    if (blockers.length === 0) blockers.push('Low Health Score');
+                    return `<tr class="clickable-row" onclick="viewAccount('${acc.id}')">
+                        <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
+                        <td style="font-weight:800;color:#b91c1c;">${formatMoney(acc.arr)}</td>
+                        <td>👤 ${acc.ae}</td>
+                        <td>${repeatDetectorCell(acc)}</td>
+                        <td>${blockers.map(b => `<span class="risk-pill">${b}</span>`).join(' ')}</td>
+                    </tr>`;
+                }).join('');
+            }
+            if (scroll) document.getElementById('vpTablePanel').scrollIntoView({ behavior: 'smooth' });
+            return;
+        }
+
+        if (filterType === 'red') { title.innerHTML = '🚨 All At-Risk Accounts'; filtered = allAccArray.filter(a => a.health_status === 'red' || a.has_balance); }
+        else if (filterType === 'zeroroi') { title.innerHTML = '⚡ Zero-ROI Accounts'; filtered = allAccArray.filter(isZeroRoi); }
+        else if (filterType === 'all') { title.innerHTML = '🌍 All Managed Accounts'; filtered = allAccArray; }
+        else if (filterType === 'detractors') { title.innerHTML = '📉 NPS Detractor Accounts'; filtered = allAccArray.filter(a => a.nps_latest_band === 'detractor'); }
+
+        filtered.sort((a,b) => b.arr - a.arr);
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:#6b7280;">No accounts match this criteria.</td></tr>';
+        } else {
+            tbody.innerHTML = filtered.map(acc => {
+                let tags = [];
+                if (acc.manual_escalation) tags.push(`<span class="risk-pill">🔥 ESCALATED</span>`);
+                if (acc.has_balance) tags.push(`<span class="risk-pill">💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}</span>`);
+                if (acc.health_status === 'red') tags.push('<span class="risk-pill">Low Health Score</span>');
+                if (acc.perc_no_indeed > 0) tags.push(`<span class="risk-pill">${acc.perc_no_indeed}% locs missing Indeed</span>`);
+                if (acc.nps_latest_band === 'detractor') tags.push('<span class="risk-pill orange">NPS Detractor</span>');
+                if (tags.length === 0) tags.push('<span class="status-badge green">Healthy</span>');
+                const arrColor = (acc.health_status === 'red' || acc.has_balance || acc.manual_escalation) ? '#b91c1c' : '#111827';
+                return `<tr class="clickable-row" onclick="viewAccount('${acc.id}')">
+                    <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
+                    <td style="font-weight:800;color:${arrColor};">${formatMoney(acc.arr)}</td>
+                    <td>👤 ${acc.ae}</td>
+                    <td>${repeatDetectorCell(acc)}</td>
+                    <td>${tags.join(' ')}</td>
+                </tr>`;
+            }).join('');
+        }
+        if (scroll) document.getElementById('vpTablePanel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ===================== BRAND DASHBOARD =====================
+    function loadBrandDashboard(bName) {
+        hideAllViews();
+        const b = brandData[bName];
+        if (!b) return;
+
+        document.getElementById('brandDashboard').classList.remove('hidden');
+        document.getElementById('backButton').classList.remove('hidden');
+        document.getElementById('backButton').innerText = '← Back to Global Summary';
+        document.getElementById('pageTitle').innerText = `🏢 ${b.name} Portfolio`;
+
+        const logoEl = document.getElementById('bLogo');
+        if (b.logo) { logoEl.src = b.logo; logoEl.style.display = 'block'; } else { logoEl.style.display = 'none'; }
+
+        document.getElementById('bName').innerText = b.name;
+        document.getElementById('bFranchiseCount').innerText = b.franchiseeCount;
+        document.getElementById('bTotalArr').innerText = formatMoney(b.totalArr);
+        document.getElementById('bTenure').innerText = b.customerSince;
+        document.getElementById('bOwner').innerText = b.owner;
+        document.getElementById('bManagedArr').innerText = formatMoney(b.managedArr);
+        document.getElementById('bUnmanagedText').innerText = b.unmanagedArr > 0 ? `+ ${formatMoney(b.unmanagedArr)} in unmanaged ARR` : `All ARR is managed by AMs`;
+        document.getElementById('bRedArr').innerText = formatMoney(b.redArr);
+
+        const franchisees = b.franchisees || [];
+        const redF = franchisees.filter(f => f.health_status === 'red');
+        const amberF = franchisees.filter(f => f.health_status === 'amber');
+        const greenF = franchisees.filter(f => f.health_status === 'green');
+        document.getElementById('bRedArrSub').innerText = `${redF.length} franchisee${redF.length !== 1 ? 's' : ''} in critical health`;
+        document.getElementById('bRedCount').innerText = `${redF.length} franchisees`;
+        document.getElementById('bAmberCount').innerText = `${amberF.length} franchisees`;
+        document.getElementById('bHealthyCount').innerText = `${greenF.length} franchisees`;
+
+        const scoredF = franchisees.filter(f => f.health_score != null && f.health_score > 0);
+        const avgH = scoredF.length ? Math.round(scoredF.reduce((s,f) => s + f.health_score, 0) / scoredF.length) : '--';
+        const avgEl = document.getElementById('bAvgHealth');
+        avgEl.innerText = avgH;
+        avgEl.style.color = avgH < 40 ? '#dc2626' : avgH < 75 ? '#d97706' : '#047857';
+        document.getElementById('bAvgHealthSub').innerText = `avg across ${franchisees.length} franchisees`;
+
+        renderBrandDonut(b.greenArr, b.amberArr, b.redArr);
+
+        const tbody = document.getElementById('bHeatTableBody');
+        const sorted = [...franchisees].sort((x,y) => y.arr - x.arr);
+        tbody.innerHTML = sorted.length === 0
+            ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px;">No franchisee data.</td></tr>'
+            : sorted.map(f => {
+                const sp = f.health_status === 'red' ? '<span class="status-badge red">Critical</span>' : f.health_status === 'amber' ? '<span class="status-badge amber">At Risk</span>' : '<span class="status-badge green">Healthy</span>';
+                const zr = (f.perc_no_indeed > 70 || f.perc_no_active_jobs > 70) ? '<span style="color:#b91c1c;font-weight:700;font-size:12px;">⚠️ Yes</span>' : '<span style="color:#9ca3af;font-size:12px;">No</span>';
+                const risk = f.primary_risk ? `<span class="risk-pill" style="font-size:11px;">${f.primary_risk}</span>` : '<span style="color:#9ca3af;font-size:12px;">—</span>';
+                return `<tr class="clickable-row" onclick="viewAccount('${f.id}')"><td style="font-weight:700;">${f.name}</td><td>${sp}</td><td style="font-weight:700;">${formatMoney(f.arr)}</td><td>${zr}</td><td>${risk}</td></tr>`;
+            }).join('');
+
+        const total = franchisees.length || 1;
+        const adoptionMetrics = [
+            { label: 'NextMatch AI',       count: franchisees.filter(f => f.nextmatch_enabled && f.nextmatch_calls_90d > 0).length },
+            { label: 'Job Boost',          count: franchisees.filter(f => f.job_boost_enabled && f.job_boost_last_used_days < 90).length },
+            { label: 'Text-to-Apply',      count: franchisees.filter(f => f.tta_flow_enabled && f.tta_flow_applications_90d > 0).length },
+            { label: 'Onboarding',         count: franchisees.filter(f => f.onboarding_enabled).length },
+            { label: 'Connected Calendar', count: franchisees.filter(f => !!f.connected_calendars).length },
+        ];
+        document.getElementById('bAdoptionRows').innerHTML = adoptionMetrics.map(m => {
+            const pct = Math.round((m.count / total) * 100);
+            const bc  = pct >= 70 ? '#10b981' : pct >= 40 ? '#f59e0b' : '#ef4444';
+            return `<div class="adoption-row"><span class="adoption-label">${m.label}</span><div class="adoption-bar-bg"><div class="adoption-bar-fill" style="width:${pct}%;background:${bc};"></div></div><span class="adoption-pct">${pct}%</span><span class="adoption-count">${m.count}/${franchisees.length}</span></div>`;
+        }).join('');
+
+        function avgField(field) {
+            const vals = franchisees.filter(f => f[field] != null).map(f => f[field]);
+            return vals.length ? Math.round(vals.reduce((s,v) => s+v, 0) / vals.length) : 0;
+        }
+        const gapMetrics = [
+            { label: 'No Indeed Apps', pct: avgField('perc_no_indeed') },
+            { label: 'No Active Jobs', pct: avgField('perc_no_active_jobs') },
+            { label: 'No Job Boosts',  pct: avgField('perc_no_job_boosts') },
+            { label: 'No Perks Listed',pct: avgField('perc_no_perks') },
+            { label: 'No Salary Shown',pct: avgField('perc_no_salaries') },
+        ];
+        document.getElementById('bGapRows').innerHTML = gapMetrics.map(m => {
+            const bc = m.pct >= 50 ? '#ef4444' : m.pct >= 25 ? '#f59e0b' : '#10b981';
+            const tc = m.pct >= 50 ? '#dc2626' : m.pct >= 25 ? '#d97706' : '#059669';
+            return `<div class="gap-row"><span class="gap-label">${m.label}</span><div class="gap-bar-bg"><div class="gap-bar-fill" style="width:${m.pct}%;background:${bc};"></div></div><span class="gap-pct" style="color:${tc};">${m.pct}%</span></div>`;
+        }).join('');
+    }
+
+    function renderBrandDonut(green, amber, red) {
+        if (brandDonutChartInstance) brandDonutChartInstance.destroy();
+        brandDonutChartInstance = new Chart(document.getElementById('brandDonutChart').getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: ['Healthy','At Risk','Critical'], datasets: [{ data: [green,amber,red], backgroundColor: ['#10b981','#f59e0b','#ef4444'], borderWidth: 2, borderColor: '#ffffff', hoverOffset: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false } } }
+        });
+    }
+
+    // ===================== AM PORTFOLIO =====================
+    function loadAMPortfolio(aeName) {
+        hideAllViews();
+        document.getElementById('amPortfolio').classList.remove('hidden');
+        document.getElementById('backButton').classList.remove('hidden');
+        document.getElementById('backButton').innerText = '← Back to Global Summary';
+        document.getElementById('accountSelect').classList.remove('hidden');
+        document.getElementById('pageTitle').innerText = `📊 ${aeName}'s Portfolio`;
+        document.getElementById('accountSearch').value = '';
+        document.getElementById('arrSearch').value = '';
+        switchPortTab(0);
+
+        currentAEAccounts = getAccountsArray().filter(a => a.ae === aeName);
+        document.getElementById('accountSelect').innerHTML = '<option value="">Jump to Account...</option>' +
+            currentAEAccounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('');
+
+        const totalScore = currentAEAccounts.reduce((s,a) => s + (Number(a.health_score)||0), 0);
+        document.getElementById('portAvgHealth').innerText = currentAEAccounts.length ? Math.round(totalScore / currentAEAccounts.length) : 0;
+        document.getElementById('portZeroRoi').innerText = currentAEAccounts.filter(isZeroRoi).length;
+        document.getElementById('portDisconnects').innerText = currentAEAccounts.filter(a => a.health_status !== 'red' && ((a.nps_score > 0 && a.nps_score < 6) || a.support_tickets_30d > 5)).length;
+
+        let cGreen=0,cAmber=0,cRed=0,aGreen=0,aAmber=0,aRed=0;
+        currentAEAccounts.forEach(a => {
+            const v = a.arr || 0;
+            if (a.health_status==='red'||a.has_balance) { cRed++; aRed+=v; } else if (a.health_status==='amber') { cAmber++; aAmber+=v; } else { cGreen++; aGreen+=v; }
+        });
+        document.getElementById('arrGreen').innerText = formatMoney(aGreen);
+        document.getElementById('arrAmber').innerText = formatMoney(aAmber);
+        document.getElementById('arrRed').innerText = formatMoney(aRed);
+
+        if (amDonutChartInstance) amDonutChartInstance.destroy();
+        amDonutChartInstance = new Chart(document.getElementById('amDonutChart').getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: ['Green','Amber','Red'], datasets: [{ data: [aGreen,aAmber,aRed], backgroundColor: ['#10b981','#f59e0b','#ef4444'], borderWidth: 0, hoverOffset: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+        });
+
+        filterAMTable('all');
+
+        const fireList = document.getElementById('firefightingList');
+        const risks = currentAEAccounts.filter(a => a.health_status==='red'||a.has_balance||a.perc_no_indeed>0||a.perc_no_active_jobs>0||a.manual_escalation);
+        fireList.innerHTML = risks.length === 0
+            ? '<div style="padding:24px;text-align:center;color:#047857;background:#ecfdf5;border-radius:8px;">✅ No critical accounts right now.</div>'
+            : risks.map(acc => {
+                let tags=[];
+                if(acc.manual_escalation) tags.push('<span class="risk-pill">🔥 ESCALATED</span>');
+                if(acc.has_balance) tags.push(`<span class="risk-pill">💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}</span>`);
+                if(acc.health_status==='red') tags.push('<span class="risk-pill">🚨 Critical Health</span>');
+                if(acc.perc_no_indeed>0) tags.push(`<span class="risk-pill">⚠️ ${acc.perc_no_indeed}% locs with no Indeed apps</span>`);
+                if(acc.perc_no_active_jobs>0) tags.push(`<span class="risk-pill">🏢 ${acc.perc_no_active_jobs}% locs with no active jobs</span>`);
+                return `<div onclick="viewAccount('${acc.id}')" style="background:white;border:1px solid #fee2e2;border-left:4px solid #ef4444;padding:16px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onmouseover="this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'"><div><div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#1e40af;">${acc.account_name}</div><div>${tags.join(' ')}</div></div><div style="text-align:right;"><div style="font-weight:800;color:#b91c1c;font-size:16px;">${formatMoney(acc.arr)}</div><div style="font-size:12px;color:#6b7280;">ARR at Risk</div></div></div>`;
+            }).join('');
+
+        const oppList = document.getElementById('opportunityList');
+        const opps = currentAEAccounts.filter(a => a.health_status!=='red'&&!a.has_balance&&(a.nextmatch_calls_90d===0||a.job_boost_last_used_days>60));
+        oppList.innerHTML = opps.length === 0
+            ? '<div style="padding:24px;text-align:center;color:#6b7280;background:#f9fafb;border-radius:8px;">No current product opportunities.</div>'
+            : opps.map(acc => {
+                let tags=[];
+                if(acc.nextmatch_calls_90d===0) tags.push('<span class="risk-pill" style="background:#dbeafe;color:#1e40af;">✨ Add AI Matching</span>');
+                if(acc.job_boost_last_used_days>60) tags.push('<span class="risk-pill" style="background:#dbeafe;color:#1e40af;">🚀 Pitch Job Boost</span>');
+                return `<div onclick="viewAccount('${acc.id}')" style="background:white;border:1px solid #e0f2fe;border-left:4px solid #3b82f6;padding:16px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onmouseover="this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'"><div><div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#1e40af;">${acc.account_name}</div><div>${tags.join(' ')}</div></div><div style="text-align:right;"><div style="font-weight:800;color:#111827;font-size:16px;">${formatMoney(acc.arr)}</div><div style="font-size:12px;color:#047857;">Healthy Account</div></div></div>`;
+            }).join('');
+    }
+
+    function filterAMTable(filterType) {
+        currentAMFilter = filterType;
+        document.querySelectorAll('.am-card').forEach(c => c.classList.remove('active-card'));
+        if (filterType !== 'all') {
+            document.getElementById('am-card-' + filterType).classList.add('active-card');
+            document.getElementById('amClearFilter').classList.remove('hidden');
+        } else {
+            document.getElementById('am-card-all').classList.add('active-card');
+            document.getElementById('amClearFilter').classList.add('hidden');
+        }
+        renderAMTable();
+    }
+
+    function sortAM(column) {
+        if (sortColumn === column) sortAscending = !sortAscending; else { sortColumn = column; sortAscending = true; }
+        ['account_name','health_score','health_status','arr'].forEach(h => {
+            const el = document.getElementById('th_' + h);
+            const text = el.innerText.replace(/ [↕↑↓]/, '');
+            el.innerText = text + (h === sortColumn ? (sortAscending ? ' ↑' : ' ↓') : ' ↕');
+        });
+        renderAMTable();
+    }
+
+    function renderAMTable() {
+        const search = (document.getElementById('accountSearch').value || '').toLowerCase();
+        const minArr = parseFloat(document.getElementById('arrSearch').value) || 0;
+        let filtered = currentAEAccounts.filter(acc => {
+            const nameMatch = String(acc.account_name||'').toLowerCase().includes(search);
+            const arrMatch  = (acc.arr||0) >= minArr;
+            let cardMatch = true;
+            if (currentAMFilter === 'zero_roi') cardMatch = isZeroRoi(acc);
+            else if (currentAMFilter === 'disconnects') cardMatch = acc.health_status !== 'red' && ((acc.nps_score > 0 && acc.nps_score < 6) || acc.support_tickets_30d > 5);
+            return nameMatch && arrMatch && cardMatch;
+        });
+        filtered.sort((a,b) => {
+            let va = a[sortColumn], vb = b[sortColumn];
+            if (sortColumn === 'health_status') { va = a.health_score; vb = b.health_score; }
+            if (typeof va === 'string') va = va.toLowerCase();
+            if (typeof vb === 'string') vb = vb.toLowerCase();
+            if (va < vb) return sortAscending ? -1 : 1;
+            if (va > vb) return sortAscending ? 1 : -1;
+            return 0;
+        });
+        const tbody = document.getElementById('amTableBody');
+        if (filtered.length === 0) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;">No accounts match these filters.</td></tr>'; return; }
+        tbody.innerHTML = filtered.map(acc => {
+            const fc = acc.health_score < 40 ? 'fill-red' : acc.health_score < 75 ? 'fill-amber' : 'fill-green';
+            return `<tr class="clickable-row" onclick="viewAccount('${acc.id}')">
+                <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
+                <td><div class="health-bar-container"><span style="font-weight:700;width:24px;">${acc.health_score}</span><div class="health-bar-bg"><div class="health-bar-fill ${fc}" style="width:${acc.health_score}%"></div></div></div></td>
+                <td><span class="status-badge ${acc.health_status}">${(acc.health_status||'unknown').toUpperCase()}</span></td>
+                <td style="font-weight:700;">${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(acc.arr)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function switchPortTab(index) {
+        document.querySelectorAll('#amPortfolio .tab-button').forEach((b,i) => b.classList.toggle('active', i===index));
+        document.querySelectorAll('#amPortfolio .tab-content').forEach((c,i) => c.classList.toggle('active', i===index));
+    }
+
+    // ===================== ACCOUNT DETAIL =====================
+    function viewAccount(id) {
+        const acc = allAccounts[id];
+        if (acc) {
+            document.getElementById('aeSelect').value = acc.ae;
+            currentAEAccounts = getAccountsArray().filter(a => a.ae === acc.ae);
+            document.getElementById('accountSelect').innerHTML = '<option value="">Jump to Account...</option>' +
+                currentAEAccounts.map(a => `<option value="${a.id}">${a.account_name}</option>`).join('');
+            document.getElementById('accountSelect').value = id;
+            document.getElementById('accountSelect').classList.remove('hidden');
+        }
+        loadAccount();
+    }
+
+    function switchAccTab(index) {
+        document.querySelectorAll('#dashboardContent .tab-button').forEach((b,i) => b.classList.toggle('active', i===index));
+        document.querySelectorAll('#dashboardContent .tab-content').forEach((c,i) => c.classList.toggle('active', i===index));
+    }
+
+    function loadAccount() {
+        const accountId = document.getElementById('accountSelect').value;
+        if (!accountId) { navigateBack(); return; }
+        const data = allAccounts[accountId];
+        if (!data) return;
+
+        hideAllViews();
+        document.getElementById('dashboardContent').classList.remove('hidden');
+        document.getElementById('accountSelect').classList.remove('hidden');
+        document.getElementById('backButton').classList.remove('hidden');
+        document.getElementById('backButton').innerText = '← Back';
+        document.getElementById('pageTitle').innerText = `🏢 ${data.account_name}`;
+        switchAccTab(0);
+
+        // --- Health card ---
+        const healthCard = document.getElementById('healthCard');
+        healthCard.className = `health-card ${data.health_status}`;
+        const statusBadge = document.getElementById('statusBadge');
+        statusBadge.className = `status-badge ${data.health_status}`;
+        const statusIcons  = { red: '🚨', amber: '⚠️', green: '✅' };
+        const statusLabels = { red: 'CRITICAL', amber: 'AT RISK', green: 'HEALTHY' };
+        document.getElementById('statusIcon').textContent  = statusIcons[data.health_status]  || 'ℹ️';
+        document.getElementById('statusText').textContent  = statusLabels[data.health_status] || 'UNKNOWN';
+        document.getElementById('accNameDisplay').textContent = data.account_name;
+        document.getElementById('healthScore').textContent    = data.health_score;
+
+        // Gauge chart
+        if (accGaugeChartInstance) accGaugeChartInstance.destroy();
+        const gaugeColor = data.health_score < 40 ? '#ef4444' : data.health_score < 75 ? '#f59e0b' : '#10b981';
+        accGaugeChartInstance = new Chart(document.getElementById('accHealthGauge').getContext('2d'), {
+            type: 'doughnut',
+            data: { datasets: [{ data: [data.health_score, 100-data.health_score], backgroundColor: [gaugeColor,'#e5e7eb'], borderWidth: 0, circumference: 180, rotation: 270 }] },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '80%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+        });
+
+        // Activity risk badge
+        function daysSince(dateStr) {
+            if (!dateStr) return null;
+            const d = new Date(dateStr);
+            if (isNaN(d)) return null;
+            const days = Math.ceil((new Date() - d) / 86400000);
+            return { days, label: days===0?'Today':days===1?'Yesterday':days+' days ago', date: dateStr.split('T')[0] };
+        }
+        const lastActivity = daysSince(data.last_activity_date);
+        const lastMeeting  = daysSince(data.last_meeting_date);
+        const activityDays = lastActivity ? lastActivity.days : (lastMeeting ? lastMeeting.days : null);
+        let badgeHtml = '';
+        if (activityDays !== null) {
+            if (activityDays > 60)      badgeHtml = `<span class="activity-risk-badge crit">⚠ No Activity ${activityDays}d</span>`;
+            else if (activityDays > 30) badgeHtml = `<span class="activity-risk-badge warn">↗ Low Activity ${activityDays}d</span>`;
+            else                        badgeHtml = `<span class="activity-risk-badge ok">✓ Active</span>`;
+        }
+        document.getElementById('accActivityRiskBadge').innerHTML = badgeHtml;
+
+        // NPS velocity badge
+        const npsDelta = (data.nps_latest_score != null && data.nps_prior_score != null) ? data.nps_latest_score - data.nps_prior_score : null;
+        let velocityHtml = '';
+        if (data.nps_trend === 'declining' && npsDelta !== null && npsDelta <= -3) {
+            velocityHtml = `<span class="velocity-badge declining">↓ Declining</span>`;
+        } else if (data.nps_trend === 'improving' && npsDelta !== null && npsDelta >= 3) {
+            velocityHtml = `<span class="velocity-badge recovering">↑ Recovering</span>`;
+        }
+        document.getElementById('accVelocityBadge').innerHTML = velocityHtml;
+
+        // Context strip (no meeting cadence)
+        const ctxParts = [];
+        if (data.industry)           ctxParts.push(`<span class="ctx-item">🏭 <strong>${data.industry}</strong></span>`);
+        if (data.city || data.country) ctxParts.push(`<span class="ctx-item">📍 <strong>${[data.city,data.country].filter(Boolean).join(', ')}</strong></span>`);
+        if (data.create_date)        ctxParts.push(`<span class="ctx-item">🗓 Customer since <strong>${data.create_date}</strong></span>`);
+        document.getElementById('accContextStrip').innerHTML = ctxParts.join('') || '<span style="color:#9ca3af;">No additional context</span>';
+
+        // --- Critical metrics strip ---
+        const hireRate = data.total_interviews > 0 ? Math.round((data.total_hired / data.total_interviews) * 100) : null;
+        const hireRateColor = hireRate===null?'':hireRate<15?'critical':hireRate<30?'warning':'good';
+        const activeLocs = data.active_locations ?? '--';
+        const totalLocs  = data.total_locations  ?? '--';
+        const locRatio   = data.total_locations > 0 ? Math.round((data.active_locations / data.total_locations) * 100) : null;
+        const locColor   = locRatio===null?'':locRatio<50?'critical':locRatio<75?'warning':'good';
+        const apps30d    = data.applications_30d ?? '--';
+        const apps30dColor = typeof apps30d==='number'?(apps30d===0?'critical':apps30d<10?'warning':'good'):'';
+        const openJobs   = data.open_jobs_count ?? '--';
+
+        document.getElementById('criticalMetrics').innerHTML = `
+            <div class="stat-card"><div class="stat-label">Billing Status</div><div class="stat-value ${data.has_balance?'critical':'good'}">${data.has_balance?'$'+(data.outstanding_balance||0).toLocaleString():'$0'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.has_balance?'past due balance':'no outstanding balance'}</div></div>
+            <div class="stat-card"><div class="stat-label">Hire Rate</div><div class="stat-value ${hireRateColor}">${hireRate!==null?hireRate+'%':'—'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.total_hired??0} hires / ${data.total_interviews??0} interviews</div></div>
+            <div class="stat-card"><div class="stat-label">Active Locations</div><div class="stat-value ${locColor}">${activeLocs}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">of ${totalLocs} total${locRatio!==null?' ('+locRatio+'%)':''}</div></div>
+            <div class="stat-card"><div class="stat-label">Applications (30d)</div><div class="stat-value ${apps30dColor}">${apps30d}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${typeof openJobs==='number'?openJobs:'--'} jobs open now</div></div>`;
+
+        // --- NPS Panel ---
+        const npsScore = data.nps_latest_score ?? data.nps_score;
+        const npsBand  = data.nps_latest_band  ?? data.nps_band;
+        const npsEl    = document.getElementById('npsScoreBig');
+        if (npsScore != null) {
+            npsEl.textContent = npsScore;
+            npsEl.className   = 'nps-score-big ' + (npsBand || 'none');
+        } else {
+            npsEl.textContent = '—';
+            npsEl.className   = 'nps-score-big none';
+        }
+        const bandLabels = { promoter: 'Promoter', passive: 'Passive', detractor: 'Detractor' };
+        document.getElementById('npsBandPill').innerHTML = npsBand
+            ? `<span class="nps-band-pill ${npsBand}">${bandLabels[npsBand]||npsBand}</span>`
+            : '';
+        const daysSinceNps = data.nps_days_since_response;
+        document.getElementById('npsDaysSince').textContent = daysSinceNps != null
+            ? (daysSinceNps === 0 ? 'Responded today' : `${daysSinceNps}d since last response`)
+            : 'No response on record';
+
+        const trendMap = { improving: '↑ Trend improving', declining: '↓ Trend declining', stable: '→ Trend stable', none: '' };
+        const trendColor = { improving: '#047857', declining: '#b91c1c', stable: '#6b7280', none: '#9ca3af' };
+        const trendKey = data.nps_trend || 'none';
+        document.getElementById('npsTrendLabel').innerHTML = trendMap[trendKey]
+            ? `<span style="color:${trendColor[trendKey]};font-weight:700;">${trendMap[trendKey]}</span>`
+            : '';
+        const stddevEl = document.getElementById('npsStddevLabel');
+        if (data.nps_response_count >= 5 && data.nps_stddev != null) {
+            stddevEl.textContent = `σ = ${Number(data.nps_stddev).toFixed(1)} (${data.nps_response_count} responses)`;
+        } else {
+            stddevEl.textContent = data.nps_response_count ? `${data.nps_response_count} response${data.nps_response_count>1?'s':''}` : '';
+        }
+        const verbatimEl = document.getElementById('npsVerbatim');
+        if (data.nps_verbatim_latest) {
+            verbatimEl.textContent = `"${data.nps_verbatim_latest}"`;
+            verbatimEl.style.display = 'block';
+        } else {
+            verbatimEl.style.display = 'none';
+        }
+
+        // --- TAB 0: ROI ---
+        document.getElementById('accHireRate').textContent = hireRate!==null?hireRate+'%':'—';
+        document.getElementById('accHireRate').className   = 'stat-value '+hireRateColor;
+        document.getElementById('accHireRateSub').textContent = `${data.total_hired??0} hires / ${data.total_interviews??0} interviews`;
+        document.getElementById('accApps30d').textContent  = apps30d;
+        document.getElementById('accApps30d').className    = 'stat-value '+apps30dColor;
+        document.getElementById('accActiveLocs').textContent = activeLocs;
+        document.getElementById('accActiveLocs').className   = 'stat-value '+locColor;
+        document.getElementById('accActiveLocsSub').textContent = `of ${totalLocs} total locations`;
+        document.getElementById('accOpenJobs').textContent  = openJobs;
+        document.getElementById('accOpenJobs').className    = 'stat-value '+(typeof openJobs==='number'&&openJobs===0?'critical':'');
+
+        const hasCalendars = !!data.connected_calendars;
+        const ttiDays = data.time_to_invite_days > 0 ? (data.time_to_invite_days / 86400).toFixed(1) : null;
+        const tthDays = data.time_to_hire > 0 ? (data.time_to_hire / 86400).toFixed(1) : null;
+        document.getElementById('interviewMetrics').innerHTML = `
+            <div class="metric-item ${hasCalendars?'good':'critical'}"><div class="metric-label">Connected Calendars</div><div class="metric-value" style="font-size:18px;">${hasCalendars?'✓ Connected':'✕ Not Connected'}</div></div>
+            <div class="metric-item ${data.total_interviews===0?'warning':''}"><div class="metric-label">Total Interviews</div><div class="metric-value">${data.total_interviews??'—'}</div></div>
+            <div class="metric-item ${ttiDays&&parseFloat(ttiDays)>7?'warning':''}"><div class="metric-label">Avg Time to Invite</div><div class="metric-value">${ttiDays?ttiDays+'d':'N/A'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">from application to invite</div></div>
+            <div class="metric-item ${tthDays&&parseFloat(tthDays)>30?'warning':''}"><div class="metric-label">Avg Time to Hire</div><div class="metric-value">${tthDays?tthDays+'d':'N/A'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">from application to hired</div></div>`;
+
+        document.getElementById('supportBilling').innerHTML = `
+            <div style="background:#f9fafb;padding:16px;border-radius:8px;border:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+                <div style="display:flex;gap:24px;">
+                    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Status</div><div class="status-badge ${data.has_balance?'red':'green'}">${data.has_balance?'Past Due':'✓ Current'}</div></div>
+                    <div><div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Outstanding Balance</div><div style="font-weight:800;font-size:20px;color:${data.has_balance?'#b91c1c':'#111827'};">$${(data.outstanding_balance||0).toLocaleString()}</div></div>
+                </div>
+                <a href="${data.chargebee_url||'#'}" target="_blank" style="background:#3b82f6;color:white;text-decoration:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;">🔗 View in Chargebee</a>
+            </div>`;
+
+        // --- TAB 1: Platform Health ---
+        const gfs = (enabled, active) => {
+            if (!enabled) return '<span class="status-indicator disabled">Not Enabled</span>';
+            if (active)   return '<span class="status-indicator enabled-used">✓ Active</span>';
+            return '<span class="status-indicator enabled-unused">✕ Unused</span>';
+        };
+        document.getElementById('featureTable').innerHTML = `
+            <tr><td><strong>Onboarding</strong></td><td>${data.onboarding_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.onboarding_enabled,data.onboarding_enabled)}</td><td>—</td></tr>
+            <tr><td><strong>NextMatch AI</strong></td><td>${data.nextmatch_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.nextmatch_enabled,data.nextmatch_calls_90d>0)}</td><td>${data.nextmatch_calls_90d??0} AI calls (90d)</td></tr>
+            <tr><td><strong>Job Boost</strong></td><td>${data.job_boost_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.job_boost_enabled,data.job_boost_last_used_days>0&&data.job_boost_last_used_days<90)}</td><td>Last used ${data.job_boost_last_used_days>0?data.job_boost_last_used_days+'d ago':'—'}</td></tr>
+            <tr><td><strong>Text-to-Apply</strong></td><td>${data.tta_flow_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.tta_flow_enabled,data.tta_flow_applications_90d>0)}</td><td>${data.tta_flow_applications_90d>0?data.tta_flow_applications_90d+' apps (90d)':'No apps in 90d'}</td></tr>
+            <tr><td><strong>LinkedIn</strong></td><td>${data.linkedin_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.linkedin_enabled,data.linkedin_enabled)}</td><td>—</td></tr>`;
+
+        const gapDefs = [
+            { label: 'No Indeed Apps',  val: data.perc_no_indeed      || 0 },
+            { label: 'No Active Jobs',  val: data.perc_no_active_jobs || 0 },
+            { label: 'No Job Boosts',   val: data.perc_no_job_boosts  || 0 },
+            { label: 'No Perks Listed', val: data.perc_no_perks       || 0 },
+            { label: 'No Salary Shown', val: data.perc_no_salaries    || 0 },
+        ];
+        document.getElementById('accGapTiles').innerHTML = gapDefs.map(g => {
+            const cls = g.val>=50?'crit':g.val>=25?'warn':'good';
+            const sub = g.val>=50?'⚠ High risk':g.val>=25?'↗ Monitor':'✓ Healthy';
+            return `<div class="gap-tile ${cls}"><div class="gap-tile-label">${g.label}</div><div class="gap-tile-value">${g.val}%</div><div class="gap-tile-sub">${sub}</div></div>`;
+        }).join('');
+
+        // --- TAB 2: Relationship ---
+        const cxScore = data.cx_gut_score ?? '—';
+        document.getElementById('accCxScore').textContent = cxScore;
+        document.getElementById('accCxScore').className   = 'stat-value' + (typeof cxScore==='number'?(cxScore<4?' critical':cxScore<7?' warning':' good'):'');
+        document.getElementById('accCalcScore').textContent = data.health_score ?? '—';
+        document.getElementById('gutScoreInput').value  = '';
+        document.getElementById('gutScoreNotes').value  = '';
+        document.getElementById('gutScoreStatus').textContent = '';
+        document.getElementById('escalationInput').value = data.manual_escalation || '';
+        document.getElementById('escStatus').textContent = '';
+
+        // Activity timeline
+        function actRow(label, info) {
+            if (!info) return `<div class="activity-row"><span class="activity-row-label">${label}</span><span class="activity-row-value" style="color:#9ca3af;">—</span></div>`;
+            const cls = info.days > 60 ? 'stale' : info.days > 30 ? 'warn' : '';
+            return `<div class="activity-row"><span class="activity-row-label">${label}</span><span class="activity-row-value ${cls}">${info.label} <span style="font-weight:400;color:#9ca3af;font-size:11px;">(${info.date})</span></span></div>`;
+        }
+        const nextActivity = data.next_activity_date ? data.next_activity_date.split('T')[0] : null;
+        document.getElementById('accActivityTimeline').innerHTML =
+            actRow('Last Meeting',   daysSince(data.last_meeting_date)) +
+            actRow('Last Activity',  lastActivity) +
+            actRow('Last Contacted', daysSince(data.last_contacted_date)) +
+            actRow('Last Call',      daysSince(data.last_logged_call_date)) +
+            actRow('Last Email',     daysSince(data.last_logged_email_date)) +
+            `<div class="activity-row"><span class="activity-row-label">Next Scheduled</span><span class="activity-row-value">${nextActivity||'<span style="color:#9ca3af;">None scheduled</span>'}</span></div>`;
+    }
+
+    // ===================== WRITE ACTIONS =====================
+    function submitEscalation() {
+        const accId    = document.getElementById('accountSelect').value;
+        const flagText = document.getElementById('escalationInput').value.trim();
+        const btn      = document.getElementById('escBtn');
+        const status   = document.getElementById('escStatus');
+        if (!accId || !flagText) return;
+
+        btn.innerText  = 'Saving...';
+        btn.disabled   = true;
+        btn.style.opacity = '0.7';
+
+        // accId is the allAccounts key, which is account_name
+        fetch('/api/escalation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_name: accId, flag_text: flagText }),
+        })
+        .then(r => r.json())
+        .then(resp => {
+            btn.innerText = 'Escalate to Exec View';
+            btn.disabled  = false;
+            btn.style.opacity = '1';
+            if (resp.success) {
+                status.textContent = '✓ Saved';
+                status.style.color = '#059669';
+                if (allAccounts[accId]) allAccounts[accId].manual_escalation = flagText;
+            } else {
+                status.textContent = '✕ Error: ' + (resp.error || 'unknown');
+                status.style.color = '#ef4444';
+            }
+        })
+        .catch(err => {
+            btn.innerText = 'Escalate to Exec View';
+            btn.disabled  = false;
+            btn.style.opacity = '1';
+            status.textContent = '✕ ' + err.message;
+            status.style.color = '#ef4444';
+        });
+    }
+
+    function submitGutScore() {
+        const accId = document.getElementById('accountSelect').value;
+        const score = document.getElementById('gutScoreInput').value;
+        const notes = document.getElementById('gutScoreNotes').value.trim();
+        const btn   = document.getElementById('gutScoreBtn');
+        const status = document.getElementById('gutScoreStatus');
+
+        if (!accId) return;
+        const numScore = Number(score);
+        if (score === '' || isNaN(numScore) || numScore < 0 || numScore > 10) {
+            status.textContent = '✕ Score must be 0–10';
+            status.style.color = '#ef4444';
+            return;
+        }
+
+        btn.innerText = 'Saving...';
+        btn.disabled  = true;
+        btn.style.opacity = '0.7';
+
+        // accId is the allAccounts key, which is account_name
+        fetch('/api/gut-score', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_name: accId, score: numScore, notes: notes || undefined }),
+        })
+        .then(r => r.json())
+        .then(resp => {
+            btn.innerText = 'Save Gut Score';
+            btn.disabled  = false;
+            btn.style.opacity = '1';
+            if (resp.success) {
+                status.textContent = '✓ Saved';
+                status.style.color = '#059669';
+                // Update local display
+                if (allAccounts[accId]) allAccounts[accId].cx_gut_score = numScore;
+                document.getElementById('accCxScore').textContent = numScore;
+                document.getElementById('gutScoreInput').value  = '';
+                document.getElementById('gutScoreNotes').value  = '';
+            } else {
+                status.textContent = '✕ Error: ' + (resp.error || 'unknown');
+                status.style.color = '#ef4444';
+            }
+        })
+        .catch(err => {
+            btn.innerText = 'Save Gut Score';
+            btn.disabled  = false;
+            btn.style.opacity = '1';
+            status.textContent = '✕ ' + err.message;
+            status.style.color = '#ef4444';
+        });
+    }
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "cx-dashboard-sync",
+  "version": "1.0.0",
+  "description": "CX Dashboard — sync scripts and Vercel API routes",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "sync": "node scripts/sync.js",
+    "digest": "node scripts/weekly-digest.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.4"
+  }
+}

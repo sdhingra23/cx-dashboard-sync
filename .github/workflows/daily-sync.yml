@@ -1,0 +1,86 @@
+name: CX Dashboard Sync
+
+on:
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  # Allow manual trigger from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  # ── Daily sync ────────────────────────────────────────────────
+  sync:
+    name: Daily sync
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run sync
+        env:
+          METABASE_BASE_URL:    ${{ secrets.METABASE_BASE_URL }}
+          METABASE_USER:        ${{ secrets.METABASE_USER }}
+          METABASE_PASS:        ${{ secrets.METABASE_PASS }}
+          CHARGEBEE_API_KEY:    ${{ secrets.CHARGEBEE_API_KEY }}
+          PENDO_API_KEY:        ${{ secrets.PENDO_API_KEY }}
+          SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          VERCEL_URL:           ${{ secrets.VERCEL_URL }}
+        run: node scripts/sync.js
+
+  # ── Monday-only weekly digest ─────────────────────────────────
+  # Runs in the same daily trigger but is gated by a day-of-week check.
+  # Separated into its own job so it only starts after sync completes,
+  # and its failure does not block or retry the sync.
+  weekly-digest:
+    name: Weekly digest (Monday only)
+    runs-on: ubuntu-latest
+    needs: sync
+    # Only proceed on Mondays; cron fires daily so we gate here.
+    if: ${{ github.event_name == 'workflow_dispatch' || fromJSON('["1"]')[0] == toJSON(format('{0}', github.event.schedule != null && '1' || '0')) || contains(fromJSON('["Mon"]'), format('{0}', steps.day.outputs.day)) }}
+
+    steps:
+      - name: Check if Monday
+        id: day
+        run: |
+          DAY=$(date -u +%u)   # 1=Mon … 7=Sun
+          echo "day_of_week=$DAY" >> $GITHUB_OUTPUT
+          if [ "$DAY" = "1" ]; then
+            echo "is_monday=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_monday=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        if: steps.day.outputs.is_monday == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: steps.day.outputs.is_monday == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.day.outputs.is_monday == 'true'
+        run: npm ci
+
+      - name: Run weekly digest
+        if: steps.day.outputs.is_monday == 'true'
+        env:
+          SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: node scripts/weekly-digest.js
