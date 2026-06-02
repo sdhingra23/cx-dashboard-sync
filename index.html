@@ -681,7 +681,7 @@
     }
 
     function isZeroRoi(acc) {
-        return (acc.perc_no_indeed > 70 || acc.perc_no_active_jobs > 70);
+        return (acc.perc_locs_no_indeed > 70 || acc.perc_locs_no_active_jobs > 70);
     }
 
     function isRepeatDetractor(acc) {
@@ -803,7 +803,7 @@
                     let blockers = [];
                     if (acc.manual_escalation) blockers.push('🔥 ESCALATED: ' + acc.manual_escalation);
                     if (acc.has_balance) blockers.push(`💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}`);
-                    if (acc.perc_no_indeed > 0) blockers.push(`${acc.perc_no_indeed}% locs missing Indeed`);
+                    if (acc.perc_locs_no_indeed > 0) blockers.push(`${acc.perc_locs_no_indeed}% locs missing Indeed`);
                     if (blockers.length === 0) blockers.push('Low Health Score');
                     return `<tr class="clickable-row" onclick="viewAccount('${acc.id}')">
                         <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
@@ -832,7 +832,7 @@
                 if (acc.manual_escalation) tags.push(`<span class="risk-pill">🔥 ESCALATED</span>`);
                 if (acc.has_balance) tags.push(`<span class="risk-pill">💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}</span>`);
                 if (acc.health_status === 'red') tags.push('<span class="risk-pill">Low Health Score</span>');
-                if (acc.perc_no_indeed > 0) tags.push(`<span class="risk-pill">${acc.perc_no_indeed}% locs missing Indeed</span>`);
+                if (acc.perc_locs_no_indeed > 0) tags.push(`<span class="risk-pill">${acc.perc_locs_no_indeed}% locs missing Indeed</span>`);
                 if (acc.nps_latest_band === 'detractor') tags.push('<span class="risk-pill orange">NPS Detractor</span>');
                 if (tags.length === 0) tags.push('<span class="status-badge green">Healthy</span>');
                 const arrColor = (acc.health_status === 'red' || acc.has_balance || acc.manual_escalation) ? '#b91c1c' : '#111827';
@@ -895,9 +895,9 @@
             ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:20px;">No franchisee data.</td></tr>'
             : sorted.map(f => {
                 const sp = f.health_status === 'red' ? '<span class="status-badge red">Critical</span>' : f.health_status === 'amber' ? '<span class="status-badge amber">At Risk</span>' : '<span class="status-badge green">Healthy</span>';
-                const zr = (f.perc_no_indeed > 70 || f.perc_no_active_jobs > 70) ? '<span style="color:#b91c1c;font-weight:700;font-size:12px;">⚠️ Yes</span>' : '<span style="color:#9ca3af;font-size:12px;">No</span>';
+                const zr = (f.perc_locs_no_indeed > 70 || f.perc_locs_no_active_jobs > 70) ? '<span style="color:#b91c1c;font-weight:700;font-size:12px;">⚠️ Yes</span>' : '<span style="color:#9ca3af;font-size:12px;">No</span>';
                 const risk = f.primary_risk ? `<span class="risk-pill" style="font-size:11px;">${f.primary_risk}</span>` : '<span style="color:#9ca3af;font-size:12px;">—</span>';
-                return `<tr class="clickable-row" onclick="viewAccount('${f.id}')"><td style="font-weight:700;">${f.name}</td><td>${sp}</td><td style="font-weight:700;">${formatMoney(f.arr)}</td><td>${zr}</td><td>${risk}</td></tr>`;
+                return `<tr class="clickable-row" onclick="viewAccount('${f.id}')"><td style="font-weight:700;">${f.account_name}</td><td>${sp}</td><td style="font-weight:700;">${formatMoney(f.arr)}</td><td>${zr}</td><td>${risk}</td></tr>`;
             }).join('');
 
         const total = franchisees.length || 1;
@@ -919,11 +919,11 @@
             return vals.length ? Math.round(vals.reduce((s,v) => s+v, 0) / vals.length) : 0;
         }
         const gapMetrics = [
-            { label: 'No Indeed Apps', pct: avgField('perc_no_indeed') },
-            { label: 'No Active Jobs', pct: avgField('perc_no_active_jobs') },
-            { label: 'No Job Boosts',  pct: avgField('perc_no_job_boosts') },
-            { label: 'No Perks Listed',pct: avgField('perc_no_perks') },
-            { label: 'No Salary Shown',pct: avgField('perc_no_salaries') },
+            { label: 'No Indeed Apps', pct: avgField('perc_locs_no_indeed') },
+            { label: 'No Active Jobs', pct: avgField('perc_locs_no_active_jobs') },
+            { label: 'No Job Boosts',  pct: avgField('perc_locs_no_job_boosts') },
+            { label: 'No Perks Listed',pct: avgField('perc_jobs_no_perks') },
+            { label: 'No Salary Shown',pct: avgField('perc_jobs_no_salaries') },
         ];
         document.getElementById('bGapRows').innerHTML = gapMetrics.map(m => {
             const bc = m.pct >= 50 ? '#ef4444' : m.pct >= 25 ? '#f59e0b' : '#10b981';
@@ -960,7 +960,7 @@
         const totalScore = currentAEAccounts.reduce((s,a) => s + (Number(a.health_score)||0), 0);
         document.getElementById('portAvgHealth').innerText = currentAEAccounts.length ? Math.round(totalScore / currentAEAccounts.length) : 0;
         document.getElementById('portZeroRoi').innerText = currentAEAccounts.filter(isZeroRoi).length;
-        document.getElementById('portDisconnects').innerText = currentAEAccounts.filter(a => a.health_status !== 'red' && ((a.nps_score > 0 && a.nps_score < 6) || a.support_tickets_30d > 5)).length;
+        document.getElementById('portDisconnects').innerText = currentAEAccounts.filter(a => a.health_status !== 'red' && (a.nps_score != null && a.nps_score < 6)).length;
 
         let cGreen=0,cAmber=0,cRed=0,aGreen=0,aAmber=0,aRed=0;
         currentAEAccounts.forEach(a => {
@@ -981,7 +981,7 @@
         filterAMTable('all');
 
         const fireList = document.getElementById('firefightingList');
-        const risks = currentAEAccounts.filter(a => a.health_status==='red'||a.has_balance||a.perc_no_indeed>0||a.perc_no_active_jobs>0||a.manual_escalation);
+        const risks = currentAEAccounts.filter(a => a.health_status==='red'||a.has_balance||a.perc_locs_no_indeed>0||a.perc_locs_no_active_jobs>0||a.manual_escalation);
         fireList.innerHTML = risks.length === 0
             ? '<div style="padding:24px;text-align:center;color:#047857;background:#ecfdf5;border-radius:8px;">✅ No critical accounts right now.</div>'
             : risks.map(acc => {
@@ -989,8 +989,8 @@
                 if(acc.manual_escalation) tags.push('<span class="risk-pill">🔥 ESCALATED</span>');
                 if(acc.has_balance) tags.push(`<span class="risk-pill">💳 Owes $${(acc.outstanding_balance||0).toLocaleString()}</span>`);
                 if(acc.health_status==='red') tags.push('<span class="risk-pill">🚨 Critical Health</span>');
-                if(acc.perc_no_indeed>0) tags.push(`<span class="risk-pill">⚠️ ${acc.perc_no_indeed}% locs with no Indeed apps</span>`);
-                if(acc.perc_no_active_jobs>0) tags.push(`<span class="risk-pill">🏢 ${acc.perc_no_active_jobs}% locs with no active jobs</span>`);
+                if(acc.perc_locs_no_indeed>0) tags.push(`<span class="risk-pill">⚠️ ${acc.perc_locs_no_indeed}% locs with no Indeed apps</span>`);
+                if(acc.perc_locs_no_active_jobs>0) tags.push(`<span class="risk-pill">🏢 ${acc.perc_locs_no_active_jobs}% locs with no active jobs</span>`);
                 return `<div onclick="viewAccount('${acc.id}')" style="background:white;border:1px solid #fee2e2;border-left:4px solid #ef4444;padding:16px;border-radius:8px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onmouseover="this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow='none'"><div><div style="font-weight:700;font-size:15px;margin-bottom:6px;color:#1e40af;">${acc.account_name}</div><div>${tags.join(' ')}</div></div><div style="text-align:right;"><div style="font-weight:800;color:#b91c1c;font-size:16px;">${formatMoney(acc.arr)}</div><div style="font-size:12px;color:#6b7280;">ARR at Risk</div></div></div>`;
             }).join('');
 
@@ -1037,7 +1037,7 @@
             const arrMatch  = (acc.arr||0) >= minArr;
             let cardMatch = true;
             if (currentAMFilter === 'zero_roi') cardMatch = isZeroRoi(acc);
-            else if (currentAMFilter === 'disconnects') cardMatch = acc.health_status !== 'red' && ((acc.nps_score > 0 && acc.nps_score < 6) || acc.support_tickets_30d > 5);
+            else if (currentAMFilter === 'disconnects') cardMatch = acc.health_status !== 'red' && acc.nps_score != null && acc.nps_score < 6;
             return nameMatch && arrMatch && cardMatch;
         });
         filtered.sort((a,b) => {
@@ -1258,11 +1258,11 @@
             <tr><td><strong>LinkedIn</strong></td><td>${data.linkedin_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.linkedin_enabled,data.linkedin_enabled)}</td><td>—</td></tr>`;
 
         const gapDefs = [
-            { label: 'No Indeed Apps',  val: data.perc_no_indeed      || 0 },
-            { label: 'No Active Jobs',  val: data.perc_no_active_jobs || 0 },
-            { label: 'No Job Boosts',   val: data.perc_no_job_boosts  || 0 },
-            { label: 'No Perks Listed', val: data.perc_no_perks       || 0 },
-            { label: 'No Salary Shown', val: data.perc_no_salaries    || 0 },
+            { label: 'No Indeed Apps',  val: data.perc_locs_no_indeed      || 0 },
+            { label: 'No Active Jobs',  val: data.perc_locs_no_active_jobs || 0 },
+            { label: 'No Job Boosts',   val: data.perc_locs_no_job_boosts  || 0 },
+            { label: 'No Perks Listed', val: data.perc_jobs_no_perks       || 0 },
+            { label: 'No Salary Shown', val: data.perc_jobs_no_salaries    || 0 },
         ];
         document.getElementById('accGapTiles').innerHTML = gapDefs.map(g => {
             const cls = g.val>=50?'crit':g.val>=25?'warn':'good';
