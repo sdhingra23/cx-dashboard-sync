@@ -252,6 +252,8 @@ async function main() {
     merged[name].email               = cb.email;
     merged[name].outstanding_balance = cb.outstanding_balance;
     merged[name].cb_customer_count   = cb.cb_customer_count;
+    merged[name].create_date         = cb.create_date  ?? null;
+    merged[name].renewal_date        = cb.renewal_date ?? null;
     // Use Chargebee ARR only when the CSV didn't set an explicit value
     if (merged[name].arr === null) merged[name].arr = cb.arr ?? 0;
   }
@@ -456,6 +458,8 @@ async function main() {
     arr:                         (Number.isFinite(acc.arr) ? acc.arr : null) ?? 0,
     outstanding_balance:         acc.outstanding_balance         ?? null,
     cb_customer_count:           acc.cb_customer_count           ?? null,
+    create_date:                 acc.create_date                 ?? null,
+    renewal_date:                acc.renewal_date                ?? null,
     health_score:                acc.health_score                ?? null,
     health_status:               acc.health_status               ?? null,
     is_zero_roi:                 acc.is_zero_roi                 ?? false,
@@ -581,14 +585,8 @@ function flagMetricNote(flagKey, acc) {
         : '?';
       return `Account created ${age} days ago — 0 applications received in last 30 days`;
     }
-    case 'flag_paid_feature_lapsed': {
-      const notes = [];
-      if (acc.job_boost_enabled && (acc.job_boost_last_used_days || 0) >= 60)
-        notes.push(`Job Boost last used ${acc.job_boost_last_used_days}d ago`);
-      if (acc.feature_nextmatch && (acc.nextmatch_calls_90d || 0) === 0)
-        notes.push('NextMatch: 0 AI calls in 90 days');
-      return notes.join('; ');
-    }
+    case 'flag_paid_feature_lapsed':
+      return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
     case 'flag_hire_rate_low_streak':
       return `Hire rate: ${Math.round((acc.hire_rate || 0) * 100)}% (below 15% for 2 consecutive days)`;
     case 'flag_time_to_invite_high':
