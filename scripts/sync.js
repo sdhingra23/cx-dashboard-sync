@@ -380,7 +380,7 @@ async function main() {
     account_manager:             acc.account_manager             ?? 'Unassigned',
     is_managed:                  acc.is_managed                  ?? false,
     email:                       acc.email                       ?? null,
-    arr:                         acc.arr                         ?? 0,
+    arr:                         (Number.isFinite(acc.arr) ? acc.arr : null) ?? 0,
     outstanding_balance:         acc.outstanding_balance         ?? null,
     cb_customer_count:           acc.cb_customer_count           ?? null,
     health_score:                acc.health_score                ?? null,
