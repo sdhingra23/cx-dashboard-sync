@@ -47,8 +47,8 @@ jobs:
     name: Weekly digest (Monday only)
     runs-on: ubuntu-latest
     needs: sync
-    # Only proceed on Mondays; cron fires daily so we gate here.
-    if: ${{ github.event_name == 'workflow_dispatch' || fromJSON('["1"]')[0] == toJSON(format('{0}', github.event.schedule != null && '1' || '0')) || contains(fromJSON('["Mon"]'), format('{0}', steps.day.outputs.day)) }}
+    # Day-of-week check is handled inside the job steps — all real steps are
+    # gated on is_monday == 'true', so this job is a no-op on non-Mondays.
 
     steps:
       - name: Check if Monday
