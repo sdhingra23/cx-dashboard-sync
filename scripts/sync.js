@@ -140,8 +140,39 @@ const METABASE_QUESTIONS = {
       'ai_screening_completion_pct', 'interview_completion_pct',
     ],
     columnMap: {
-      total_interviewed:       'total_interviews',     // internal field name
+      total_interviewed:         'total_interviews',       // internal field name
       avg_time_to_interview_hrs: 'avg_time_to_invite_hrs', // converted to days in derived step
+    },
+  },
+
+  // /question/1470 — Application timing stats (time-to-contact, time-to-interview, time-to-hire)
+  appTimingStats: {
+    id: 1470,
+    columns: [
+      'account_id', 'account_name', 'company_id', 'company_name',
+      'contact_sample_n', 'avg_time_to_contact_hrs',
+      'interview_sample_n', 'avg_time_to_interview_hrs',
+      'hire_sample_n', 'avg_time_to_hire_hrs',
+    ],
+    // avg_time_to_contact_hrs is the unique new field from this question.
+    // avg_time_to_interview_hrs / avg_time_to_hire_hrs also appear in Q1469 — fine to overwrite.
+  },
+
+  // /question/1471 — Open jobs by company (rolled up per account)
+  openJobs: {
+    id: 1471,
+    columns: ['account_id', 'account_name', 'company_id', 'company_name', 'open_jobs'],
+    columnMap: {
+      open_jobs: 'open_jobs_count',
+    },
+  },
+
+  // /question/1472 — Application count (last 30 days) by company
+  appCount30d: {
+    id: 1472,
+    columns: ['account_id', 'account_name', 'company_id', 'company_name', 'applications_last_30d'],
+    columnMap: {
+      applications_last_30d: 'applications_30d',
     },
   },
 };
@@ -251,11 +282,17 @@ async function main() {
     'apply_to_hire_pct', 'apply_to_interview_pct',
     'avg_time_to_invite_hrs', 'avg_time_to_hire_hrs', 'avg_time_to_review_hrs',
     'ai_screening_completion_pct', 'interview_completion_pct',
+    // Application timing (Q1470)
+    'avg_time_to_contact_hrs',
+    // Open jobs (Q1471)
+    'open_jobs_count',
+    // Applications last 30d (Q1472)
+    'applications_30d',
     // ── Not yet available — add when Metabase questions exist ──
-    // 'open_jobs_count', 'applications_30d', 'no_connected_calendars',
+    // 'no_connected_calendars',
     // 'job_boost_enabled', 'job_boost_last_used_days',
     // 'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
-    // 'create_date', 'brand_name', 'account_manager',
+    // 'create_date', 'renewal_date',
   ];
 
   for (const [name, mb] of Object.entries(mbMap)) {
@@ -341,12 +378,16 @@ async function main() {
       ? Math.round((Number(acc.jobs_without_salary) || 0) / totalJobs * 1000) / 10
       : null;
 
-    // avg_time_to_invite_days / avg_time_to_hire_days: convert from hours (Q1469) to days
+    // avg_time_to_invite_days / avg_time_to_hire_days / avg_time_to_contact_days:
+    // convert from hours (Q1469 / Q1470) to days
     acc.avg_time_to_invite_days = acc.avg_time_to_invite_hrs != null
       ? Math.round(acc.avg_time_to_invite_hrs / 24 * 10) / 10
       : null;
     acc.avg_time_to_hire_days = acc.avg_time_to_hire_hrs != null
       ? Math.round(acc.avg_time_to_hire_hrs / 24 * 10) / 10
+      : null;
+    acc.avg_time_to_contact_days = acc.avg_time_to_contact_hrs != null
+      ? Math.round(acc.avg_time_to_contact_hrs / 24 * 10) / 10
       : null;
 
     // is_zero_roi: crossed 70% threshold on perc_locs_no_indeed OR perc_locs_no_active_jobs
@@ -445,6 +486,9 @@ async function main() {
     total_applied:               acc.total_applied               ?? null,
     avg_time_to_invite_days:     acc.avg_time_to_invite_days     ?? null,
     avg_time_to_hire_days:       acc.avg_time_to_hire_days       ?? null,
+    avg_time_to_contact_days:    acc.avg_time_to_contact_days    ?? null,
+    open_jobs_count:             acc.open_jobs_count             ?? null,
+    applications_30d:            acc.applications_30d            ?? null,
     two_way_pct:                 acc.two_way_pct                 ?? null,
     employer_response_rate_pct:  acc.employer_response_rate_pct  ?? null,
     hire_rate_with_chat_pct:     acc.hire_rate_with_chat_pct     ?? null,
