@@ -1201,14 +1201,14 @@
             ? `<span style="color:${trendColor[trendKey]};font-weight:700;">${trendMap[trendKey]}</span>`
             : '';
         const stddevEl = document.getElementById('npsStddevLabel');
-        if (data.nps_response_count >= 5 && data.nps_stddev != null) {
-            stddevEl.textContent = `σ = ${Number(data.nps_stddev).toFixed(1)} (${data.nps_response_count} responses)`;
+        if (data.nps_response_count >= 5 && data.nps_score_stddev != null) {
+            stddevEl.textContent = `σ = ${Number(data.nps_score_stddev).toFixed(1)} (${data.nps_response_count} responses)`;
         } else {
             stddevEl.textContent = data.nps_response_count ? `${data.nps_response_count} response${data.nps_response_count>1?'s':''}` : '';
         }
         const verbatimEl = document.getElementById('npsVerbatim');
-        if (data.nps_verbatim_latest) {
-            verbatimEl.textContent = `"${data.nps_verbatim_latest}"`;
+        if (data.nps_latest_verbatim) {
+            verbatimEl.textContent = `"${data.nps_latest_verbatim}"`;
             verbatimEl.style.display = 'block';
         } else {
             verbatimEl.style.display = 'none';
@@ -1227,8 +1227,8 @@
         document.getElementById('accOpenJobs').className    = 'stat-value '+(typeof openJobs==='number'&&openJobs===0?'critical':'');
 
         const hasCalendars = !!data.connected_calendars;
-        const ttiDays = data.time_to_invite_days > 0 ? (data.time_to_invite_days / 86400).toFixed(1) : null;
-        const tthDays = data.time_to_hire > 0 ? (data.time_to_hire / 86400).toFixed(1) : null;
+        const ttiDays = data.avg_time_to_invite_days > 0 ? Number(data.avg_time_to_invite_days).toFixed(1) : null;
+        const tthDays = data.avg_time_to_hire_days  > 0 ? Number(data.avg_time_to_hire_days).toFixed(1)  : null;
         document.getElementById('interviewMetrics').innerHTML = `
             <div class="metric-item ${hasCalendars?'good':'critical'}"><div class="metric-label">Connected Calendars</div><div class="metric-value" style="font-size:18px;">${hasCalendars?'✓ Connected':'✕ Not Connected'}</div></div>
             <div class="metric-item ${data.total_interviews===0?'warning':''}"><div class="metric-label">Total Interviews</div><div class="metric-value">${data.total_interviews??'—'}</div></div>
