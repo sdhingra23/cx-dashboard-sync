@@ -32,6 +32,7 @@ import {
   saveSnapshots,
   getYesterdaySnapshots,
   upsertNpsResponses,
+  deleteStaleAccounts,
 } from '../lib/supabase.js';
 
 // ── Metabase question config ──────────────────────────────────
@@ -461,6 +462,11 @@ async function main() {
     last_synced:                 acc.last_synced,
   })).filter(row => row.account_name);
   await upsertAccounts(accountRows);
+
+  // Prune accounts that are no longer in the CSV
+  await deleteStaleAccounts(accountRows.map(r => r.account_name)).catch(e =>
+    console.error('deleteStaleAccounts failed (non-fatal):', e.message)
+  );
 
   // ── 8. Save daily snapshots ───────────────────────────────────
   const snapshotRows = accountRows.map(acc => ({
