@@ -372,7 +372,58 @@ async function main() {
   }
 
   // ── 7. Upsert accounts ────────────────────────────────────────
-  const accountRows = Object.values(merged);
+  // Build explicit rows — only columns that exist in the Supabase schema.
+  // This prevents unknown Metabase/intermediate fields from crashing the upsert.
+  const accountRows = Object.values(merged).map(acc => ({
+    account_name:                acc.account_name,
+    account_id:                  acc.account_id                  ?? null,
+    account_manager:             acc.account_manager             ?? 'Unassigned',
+    is_managed:                  acc.is_managed                  ?? false,
+    email:                       acc.email                       ?? null,
+    arr:                         acc.arr                         ?? 0,
+    outstanding_balance:         acc.outstanding_balance         ?? null,
+    cb_customer_count:           acc.cb_customer_count           ?? null,
+    health_score:                acc.health_score                ?? null,
+    health_status:               acc.health_status               ?? null,
+    is_zero_roi:                 acc.is_zero_roi                 ?? false,
+    hire_rate:                   acc.hire_rate                   ?? null,
+    nps_latest_score:            acc.nps_latest_score            ?? null,
+    nps_latest_band:             acc.nps_latest_band             ?? null,
+    nps_latest_verbatim:         acc.nps_latest_verbatim         ?? null,
+    nps_latest_response_date:    acc.nps_latest_response_date    ?? null,
+    nps_prior_score:             acc.nps_prior_score             ?? null,
+    nps_trend:                   acc.nps_trend                   ?? null,
+    nps_response_count:          acc.nps_response_count          ?? null,
+    nps_score_stddev:            acc.nps_score_stddev            ?? null,
+    nps_days_since_response:     acc.nps_days_since_response     ?? null,
+    perc_locs_no_indeed:         acc.perc_locs_no_indeed         ?? null,
+    perc_locs_no_job_boosts:     acc.perc_locs_no_job_boosts     ?? null,
+    perc_locs_no_active_jobs:    acc.perc_locs_no_active_jobs    ?? null,
+    perc_jobs_no_perks:          acc.perc_jobs_no_perks          ?? null,
+    perc_jobs_no_salaries:       acc.perc_jobs_no_salaries       ?? null,
+    total_locations:             acc.total_locations             ?? null,
+    active_locations:            acc.active_locations            ?? null,
+    locs_no_active_jobs:         acc.locs_no_active_jobs         ?? null,
+    total_jobs_count:            acc.total_jobs_count            ?? null,
+    jobs_without_salary:         acc.jobs_without_salary         ?? null,
+    nextmatch_calls_90d:         acc.nextmatch_calls_90d         ?? null,
+    nextmatch_last_used:         acc.nextmatch_last_used         ?? null,
+    two_way_pct:                 acc.two_way_pct                 ?? null,
+    employer_response_rate_pct:  acc.employer_response_rate_pct  ?? null,
+    hire_rate_with_chat_pct:     acc.hire_rate_with_chat_pct     ?? null,
+    pendo_last_active:           acc.pendo_last_active           ?? null,
+    pendo_days_active_per_visitor: acc.pendo_days_active_per_visitor ?? null,
+    pendo_error_click_rate:      acc.pendo_error_click_rate      ?? null,
+    flag_churn_verbatim:         acc.flag_churn_verbatim         || false,
+    flag_promoter_flip:          acc.flag_promoter_flip          || false,
+    flag_zero_roi_new:           acc.flag_zero_roi_new           || false,
+    flag_new_account_zero_apps:  acc.flag_new_account_zero_apps  || false,
+    flag_paid_feature_lapsed:    acc.flag_paid_feature_lapsed    || false,
+    flag_hire_rate_low_streak:   acc.flag_hire_rate_low_streak   || false,
+    flag_time_to_invite_high:    acc.flag_time_to_invite_high    || false,
+    flag_billing_balance:        acc.flag_billing_balance        || false,
+    last_synced:                 acc.last_synced,
+  })).filter(row => row.account_name);
   await upsertAccounts(accountRows);
 
   // ── 8. Save daily snapshots ───────────────────────────────────
