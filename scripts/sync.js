@@ -23,6 +23,7 @@ import { mbGetSession, buildMetabaseData }    from '../lib/metabase.js';
 import { buildChargebeeData }                  from '../lib/chargebee.js';
 import { fetchNpsResponses, fetchAccountActivity } from '../lib/pendo.js';
 import { normalizeName }                       from '../lib/normalize.js';
+import { loadAmAssignments }                   from '../lib/am.js';
 import { computeHealthScore, healthStatus, computeHireRate, npsBand, npsTrend } from '../lib/health.js';
 import { computeFlags, FLAG_LABELS, URGENT_FLAGS } from '../lib/flags.js';
 import { postFlagAlert }                       from '../lib/slack.js';
@@ -33,30 +34,97 @@ import {
   upsertNpsResponses,
 } from '../lib/supabase.js';
 
-// ── Metabase question config (placeholder — fill IDs when ready) ──
-// Shape mirrors METABASE_QUESTIONS from Config.gs.
-// Set `id` to the numeric question ID from the Metabase URL.
+// ── Metabase question config ──────────────────────────────────
+// `id`        — numeric ID from the Metabase question URL (/question/1234)
+// `columns`   — exact column names as they appear in Metabase (spaces OK)
+// `columnMap` — rename Metabase column → internal field name (optional)
+//
+// All questions run in parallel. Results are merged by account_name.
+// Questions that return only flagged/filtered accounts (e.g. noTtaApps)
+// are fine — absent accounts simply won't have those fields set.
 const METABASE_QUESTIONS = {
-  // productUsage: {
-  //   id: 0,
-  //   columns: [
-  //     'account_name',
-  //     'active_locations', 'total_locations', 'open_jobs_count',
-  //     'applications_30d', 'tta_apps_count_90d', 'no_tta_apps_90d',
-  //     'nextmatch_calls_90d', 'job_boost_enabled', 'job_boost_last_used_days',
-  //     'no_connected_calendars', 'total_hired', 'total_interviews',
-  //     'avg_time_to_invite_days', 'avg_time_to_hire_days',
-  //     'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
-  //   ],
-  // },
-  // configGaps: {
-  //   id: 0,
-  //   columns: [
-  //     'account_name',
-  //     'perc_locs_no_indeed', 'perc_locs_no_job_boosts', 'perc_locs_no_active_jobs',
-  //     'perc_jobs_no_perks', 'perc_jobs_no_salaries',
-  //   ],
-  // },
+
+  // /question/1438 — Jobs with no perks
+  jobsNoPerks: {
+    id: 1438,
+    columns: ['Location_Count', 'Job_Count', 'Jobs_No_Perks', 'Pct_Jobs_No_Perks'],
+    columnMap: {
+      Job_Count:        'total_jobs_count',
+      Jobs_No_Perks:    'jobs_no_perks',
+      Pct_Jobs_No_Perks: 'perc_jobs_no_perks',
+    },
+  },
+
+  // /question/1437 — Locations with no boosting
+  locsNoBoosting: {
+    id: 1437,
+    columns: ['Location_Count', 'Locations_No_Boost', 'Pct_Locations_No_Boost'],
+    columnMap: {
+      Location_Count:        'active_locations',
+      Pct_Locations_No_Boost: 'perc_locs_no_job_boosts',
+    },
+  },
+
+  // /question/1436 — Locations with no Indeed apps
+  locsNoIndeed: {
+    id: 1436,
+    columns: ['Locs_No_Indeed', 'Total_Locations', 'Perc_Locs_No_Indeed'],
+    columnMap: {
+      Total_Locations:    'total_locations',
+      Perc_Locs_No_Indeed: 'perc_locs_no_indeed',
+    },
+  },
+
+  // /question/1463 — Jobs with no salary
+  jobsNoSalary: {
+    id: 1463,
+    columns: ['Location Count', 'Total Jobs Count', 'Jobs_without_salary'],
+    columnMap: {
+      'Total Jobs Count':  'total_jobs_count_salary', // separate — merged below into perc_jobs_no_salaries
+      Jobs_without_salary: 'jobs_without_salary',
+    },
+  },
+
+  // /question/1432 — Two-way messaging breakdown
+  messaging: {
+    id: 1432,
+    columns: [
+      'account_status', 'total_chats', 'applications_with_chat',
+      'two_way_pct', 'employer_response_rate_pct',
+      'hired_with_chat', 'hire_rate_with_chat_pct', 'locations_with_chat',
+    ],
+    // account_id omitted — Chargebee is source of truth for that
+  },
+
+  // /question/1464 — Locations with no published jobs
+  locsNoPublishedJobs: {
+    id: 1464,
+    columns: ['Locs_w_no_published_job', 'Total_Locations', 'Percentage'],
+    columnMap: {
+      Locs_w_no_published_job: 'locs_no_active_jobs',
+      Percentage:               'perc_locs_no_active_jobs',
+    },
+  },
+
+  // /question/1329 — Accounts with no TTA applications in last 90 days
+  // Filtered list — only accounts with ZERO TTA apps appear.
+  // Absence from this question does NOT mean they have TTA apps (they may just not be filtered in).
+  noTtaApps: {
+    id: 1329,
+    columns: ['Location_Count'],
+    columnMap: { Location_Count: 'no_tta_apps_loc_count' },
+  },
+
+  // /question/1468 — AI usage by account (NextMatch)
+  aiUsage: {
+    id: 1468,
+    columns: ['Requested', 'Completed', 'Expired', 'Credits_Used', 'Last_Billed_On'],
+    columnMap: {
+      Requested:    'nextmatch_requested',
+      Completed:    'nextmatch_calls_90d',
+      Last_Billed_On: 'nextmatch_last_used',
+    },
+  },
 };
 
 const DASHBOARD_BASE = process.env.VERCEL_URL
@@ -105,37 +173,69 @@ async function main() {
   console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}`);
 
   // ── 3. Merge into one map keyed by normalized account name ───
-  const merged = {}; // { normalizedName: accountObject }
+  //
+  // CSV is the source of truth for which accounts exist on the dashboard.
+  // Chargebee, Metabase, and Pendo data are merged in only for accounts
+  // already in the CSV — Chargebee-only accounts are ignored.
 
-  // Seed from Chargebee (billing source of truth for ARR and account_id)
-  for (const cb of cbRows) {
-    const name = cb.account_name; // already normalized by buildChargebeeData
+  // Seed from AM assignments CSV (defines the account universe)
+  const amMap = loadAmAssignments();
+  const merged = {};
+
+  for (const [name, am] of Object.entries(amMap)) {
     merged[name] = {
-      account_name:        name,
-      account_id:          cb.account_id,
-      email:               cb.email,
-      arr:                 cb.arr,
-      outstanding_balance: cb.outstanding_balance,
-      cb_customer_count:   cb.cb_customer_count,
+      account_name:    name,
+      account_manager: am.account_manager,
+      arr:             am.arr,       // null if not set — Chargebee fills in below
+      is_managed:      am.is_managed,
     };
   }
 
+  console.log(`CSV accounts loaded: ${Object.keys(merged).length}`);
+
+  // Merge Chargebee billing data (CSV accounts only — skip Chargebee-only accounts)
+  for (const cb of cbRows) {
+    const name = cb.account_name; // already normalized by buildChargebeeData
+    if (!merged[name]) continue;  // not in CSV — skip
+
+    merged[name].account_id          = cb.account_id;
+    merged[name].email               = cb.email;
+    merged[name].outstanding_balance = cb.outstanding_balance;
+    merged[name].cb_customer_count   = cb.cb_customer_count;
+    // Use Chargebee ARR only when the CSV didn't set an explicit value
+    if (merged[name].arr === null) merged[name].arr = cb.arr ?? 0;
+  }
+
   // Merge Metabase (auto columns)
+  // Keys here are the TARGET field names (after columnMap renaming).
+  // Add to this list whenever a new Metabase question is configured.
   const MB_AUTO_KEYS = [
-    'account_manager', 'brand_name',
+    // Config gaps
     'perc_locs_no_indeed', 'perc_locs_no_job_boosts', 'perc_locs_no_active_jobs',
-    'perc_jobs_no_perks', 'perc_jobs_no_salaries',
-    'active_locations', 'total_locations', 'open_jobs_count',
-    'applications_30d', 'no_tta_apps_90d', 'tta_apps_count_90d',
-    'no_connected_calendars', 'total_hired', 'total_interviews',
-    'avg_time_to_invite_days', 'avg_time_to_hire_days',
-    'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
-    'job_boost_enabled', 'job_boost_last_used_days', 'nextmatch_calls_90d',
-    'create_date',
+    'perc_jobs_no_perks',
+    'total_locations', 'active_locations',
+    'locs_no_active_jobs',
+    // Jobs / salary (perc_jobs_no_salaries derived below)
+    'total_jobs_count', 'total_jobs_count_salary', 'jobs_no_perks', 'jobs_without_salary',
+    // Two-way messaging
+    'account_status', 'total_chats', 'applications_with_chat',
+    'two_way_pct', 'employer_response_rate_pct',
+    'hired_with_chat', 'hire_rate_with_chat_pct', 'locations_with_chat',
+    // TTA apps (filtered list — presence means zero TTA apps in 90d)
+    'no_tta_apps_loc_count',
+    // AI / NextMatch
+    'nextmatch_requested', 'nextmatch_calls_90d', 'nextmatch_last_used',
+    // ── Not yet available — add when Metabase questions exist ──
+    // 'open_jobs_count', 'applications_30d',
+    // 'avg_time_to_invite_days', 'avg_time_to_hire_days',
+    // 'total_hired', 'total_interviews', 'no_connected_calendars',
+    // 'job_boost_enabled', 'job_boost_last_used_days',
+    // 'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
+    // 'create_date', 'brand_name', 'account_manager',
   ];
 
   for (const [name, mb] of Object.entries(mbMap)) {
-    if (!merged[name]) merged[name] = { account_name: name };
+    if (!merged[name]) continue; // not in CSV — skip
     for (const key of MB_AUTO_KEYS) {
       if (mb[key] !== undefined) merged[name][key] = mb[key];
     }
@@ -210,6 +310,13 @@ async function main() {
 
   // ── Compute derived fields ────────────────────────────────────
   for (const acc of Object.values(merged)) {
+    // perc_jobs_no_salaries: derived from jobs_without_salary ÷ total_jobs_count
+    // Uses total_jobs_count_salary (from Q1463) if available, falls back to total_jobs_count (Q1438)
+    const totalJobs = Number(acc.total_jobs_count_salary || acc.total_jobs_count) || 0;
+    acc.perc_jobs_no_salaries = totalJobs > 0
+      ? Math.round((Number(acc.jobs_without_salary) || 0) / totalJobs * 1000) / 10
+      : null;
+
     // is_zero_roi: crossed 70% threshold on perc_locs_no_indeed OR perc_locs_no_active_jobs
     acc.is_zero_roi = (Number(acc.perc_locs_no_indeed) || 0) > 70
                    || (Number(acc.perc_locs_no_active_jobs) || 0) > 70;
@@ -308,7 +415,8 @@ async function main() {
   // ── 10. Post Slack alerts (urgent flags only — any day) ───────
   // Non-urgent flags are batched and posted Monday by weekly-digest.js.
   for (const { flagKey, label, acc, metric } of flagAlerts) {
-    if (!URGENT_FLAGS.has(flagKey)) continue;
+    if (!URGENT_FLAGS.has(flagKey)) continue;   // non-urgent → Monday digest
+    if (!acc.is_managed) continue;              // unmanaged accounts never get Slack alerts
     try {
       await postFlagAlert(flagKey, label, acc, metric, DASHBOARD_BASE);
     } catch (e) {

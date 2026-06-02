@@ -174,6 +174,7 @@ async function main() {
 
   let weeklyFlagCount = 0;
   for (const acc of accounts) {
+    if (!acc.is_managed) continue;              // unmanaged accounts never get Slack alerts
     const thisSnap = latestThisWeek[acc.account_name];
     const prevSnap = latestPrevWeek[acc.account_name];
     if (!thisSnap) continue;
