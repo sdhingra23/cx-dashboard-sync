@@ -120,9 +120,27 @@ const METABASE_QUESTIONS = {
     id: 1468,
     columns: ['Requested', 'Completed', 'Expired', 'Credits_Used', 'Last_Billed_On'],
     columnMap: {
-      Requested:    'nextmatch_requested',
-      Completed:    'nextmatch_calls_90d',
+      Requested:      'nextmatch_requested',
+      Completed:      'nextmatch_calls_90d',
       Last_Billed_On: 'nextmatch_last_used',
+    },
+  },
+
+  // /question/1469 — Job stats (hiring funnel + time metrics)
+  // account_id here is the Chargebee customer ID — used as fallback
+  // for accounts where Chargebee name matching failed (fixes Pendo NPS matching).
+  jobStats: {
+    id: 1469,
+    columns: [
+      'account_id',
+      'total_applied', 'total_shortlisted', 'total_interviewed', 'total_hired',
+      'apply_to_hire_pct', 'apply_to_interview_pct',
+      'avg_time_to_interview_hrs', 'avg_time_to_hire_hrs', 'avg_time_to_review_hrs',
+      'ai_screening_completion_pct', 'interview_completion_pct',
+    ],
+    columnMap: {
+      total_interviewed:       'total_interviews',     // internal field name
+      avg_time_to_interview_hrs: 'avg_time_to_invite_hrs', // converted to days in derived step
     },
   },
 };
@@ -225,10 +243,15 @@ async function main() {
     'no_tta_apps_loc_count',
     // AI / NextMatch
     'nextmatch_requested', 'nextmatch_calls_90d', 'nextmatch_last_used',
+    // Job stats (Q1469) — hiring funnel + time metrics
+    // account_id included as fallback for accounts where Chargebee name matching failed
+    'account_id',
+    'total_applied', 'total_shortlisted', 'total_interviews', 'total_hired',
+    'apply_to_hire_pct', 'apply_to_interview_pct',
+    'avg_time_to_invite_hrs', 'avg_time_to_hire_hrs', 'avg_time_to_review_hrs',
+    'ai_screening_completion_pct', 'interview_completion_pct',
     // ── Not yet available — add when Metabase questions exist ──
-    // 'open_jobs_count', 'applications_30d',
-    // 'avg_time_to_invite_days', 'avg_time_to_hire_days',
-    // 'total_hired', 'total_interviews', 'no_connected_calendars',
+    // 'open_jobs_count', 'applications_30d', 'no_connected_calendars',
     // 'job_boost_enabled', 'job_boost_last_used_days',
     // 'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
     // 'create_date', 'brand_name', 'account_manager',
@@ -315,6 +338,14 @@ async function main() {
     const totalJobs = Number(acc.total_jobs_count_salary || acc.total_jobs_count) || 0;
     acc.perc_jobs_no_salaries = totalJobs > 0
       ? Math.round((Number(acc.jobs_without_salary) || 0) / totalJobs * 1000) / 10
+      : null;
+
+    // avg_time_to_invite_days / avg_time_to_hire_days: convert from hours (Q1469) to days
+    acc.avg_time_to_invite_days = acc.avg_time_to_invite_hrs != null
+      ? Math.round(acc.avg_time_to_invite_hrs / 24 * 10) / 10
+      : null;
+    acc.avg_time_to_hire_days = acc.avg_time_to_hire_hrs != null
+      ? Math.round(acc.avg_time_to_hire_hrs / 24 * 10) / 10
       : null;
 
     // is_zero_roi: crossed 70% threshold on perc_locs_no_indeed OR perc_locs_no_active_jobs
@@ -408,6 +439,11 @@ async function main() {
     jobs_without_salary:         acc.jobs_without_salary         ?? null,
     nextmatch_calls_90d:         acc.nextmatch_calls_90d         ?? null,
     nextmatch_last_used:         acc.nextmatch_last_used         ?? null,
+    total_hired:                 acc.total_hired                 ?? null,
+    total_interviews:            acc.total_interviews            ?? null,
+    total_applied:               acc.total_applied               ?? null,
+    avg_time_to_invite_days:     acc.avg_time_to_invite_days     ?? null,
+    avg_time_to_hire_days:       acc.avg_time_to_hire_days       ?? null,
     two_way_pct:                 acc.two_way_pct                 ?? null,
     employer_response_rate_pct:  acc.employer_response_rate_pct  ?? null,
     hire_rate_with_chat_pct:     acc.hire_rate_with_chat_pct     ?? null,
