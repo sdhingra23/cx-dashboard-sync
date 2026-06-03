@@ -18,7 +18,8 @@ export default async function handler(req, res) {
     const { data, error } = await sb
       .from('accounts')
       .select('*')
-      .order('account_name', { ascending: true });
+      .order('account_name', { ascending: true })
+      .limit(10000);
 
     if (error) throw error;
 
