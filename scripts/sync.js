@@ -128,6 +128,7 @@ const METABASE_QUESTIONS = {
   },
 
   // /question/1469 — Job stats (hiring funnel + time metrics)
+  // Returns one row per location — must sum counts and avg rates across locations.
   // account_id here is the Chargebee customer ID — used as fallback
   // for accounts where Chargebee name matching failed (fixes Pendo NPS matching).
   jobStats: {
@@ -143,9 +144,27 @@ const METABASE_QUESTIONS = {
       total_interviewed:         'total_interviews',       // internal field name
       avg_time_to_interview_hrs: 'avg_time_to_invite_hrs', // converted to days in derived step
     },
+    aggregate: {
+      account_id:                   'first',
+      total_applied:                'sum',
+      total_shortlisted:            'sum',
+      total_interviewed:            'sum',
+      total_hired:                  'sum',
+      apply_to_hire_pct:            'avg',
+      apply_to_interview_pct:       'avg',
+      avg_time_to_interview_hrs:    'avg',
+      avg_time_to_hire_hrs:         'avg',
+      avg_time_to_review_hrs:       'avg',
+      ai_screening_completion_pct:  'avg',
+      interview_completion_pct:     'avg',
+    },
   },
 
   // /question/1470 — Application timing stats (time-to-contact, time-to-interview, time-to-hire)
+  // Returns one row per location — avg times across locations, sum sample sizes.
+  // avg_time_to_contact_hrs is the unique new field from this question.
+  // avg_time_to_interview_hrs / avg_time_to_hire_hrs also appear in Q1469 — fine to overwrite
+  // since Q1470 sample sizes are weighted and typically more accurate.
   appTimingStats: {
     id: 1470,
     columns: [
@@ -154,25 +173,39 @@ const METABASE_QUESTIONS = {
       'interview_sample_n', 'avg_time_to_interview_hrs',
       'hire_sample_n', 'avg_time_to_hire_hrs',
     ],
-    // avg_time_to_contact_hrs is the unique new field from this question.
-    // avg_time_to_interview_hrs / avg_time_to_hire_hrs also appear in Q1469 — fine to overwrite.
+    aggregate: {
+      avg_time_to_contact_hrs:   'avg',
+      avg_time_to_interview_hrs: 'avg',
+      avg_time_to_hire_hrs:      'avg',
+      contact_sample_n:          'sum',
+      interview_sample_n:        'sum',
+      hire_sample_n:             'sum',
+    },
   },
 
   // /question/1471 — Open jobs by company (rolled up per account)
+  // Returns one row per location/company — sum across all locations.
   openJobs: {
     id: 1471,
     columns: ['account_id', 'account_name', 'company_id', 'company_name', 'open_jobs'],
     columnMap: {
       open_jobs: 'open_jobs_count',
     },
+    aggregate: {
+      open_jobs: 'sum',
+    },
   },
 
   // /question/1472 — Application count (last 30 days) by company
+  // Returns one row per location/company — sum across all locations.
   appCount30d: {
     id: 1472,
     columns: ['account_id', 'account_name', 'company_id', 'company_name', 'applications_last_30d'],
     columnMap: {
       applications_last_30d: 'applications_30d',
+    },
+    aggregate: {
+      applications_last_30d: 'sum',
     },
   },
 };
