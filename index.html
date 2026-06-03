@@ -1388,7 +1388,7 @@
             </div>`;
 
         // --- TAB 1: Platform Health ---
-        const statusBadge = (type) => {
+        const featureBadge = (type) => {
             if (type === 'active')       return '<span class="status-indicator enabled-used">✓ Active</span>';
             if (type === 'partial')      return '<span class="status-indicator enabled-unused">◑ Partial</span>';
             if (type === 'unused')       return '<span class="status-indicator enabled-unused">✕ Unused</span>';
@@ -1428,13 +1428,13 @@
 
         // ── LinkedIn: still no data source
         const noDataRow = (label) =>
-            `<tr><td><strong>${label}</strong></td><td style="color:#9ca3af;">—</td><td>${statusBadge('no-data')}</td><td style="color:#9ca3af;font-style:italic;">Not connected to a data source</td></tr>`;
+            `<tr><td><strong>${label}</strong></td><td style="color:#9ca3af;">—</td><td>${featureBadge('no-data')}</td><td style="color:#9ca3af;font-style:italic;">Not connected to a data source</td></tr>`;
 
         document.getElementById('featureTable').innerHTML =
-            `<tr><td><strong>Text-to-Apply</strong></td><td>${ttaCoverage}</td><td>${statusBadge(ttaStatus)}</td><td>${ttaDetail}</td></tr>` +
-            `<tr><td><strong>Job Boost</strong></td><td>${boostCoverage}</td><td>${statusBadge(boostStatus)}</td><td>${boostDetail}</td></tr>` +
-            `<tr><td><strong>NextMatch AI</strong></td><td>${nmCoverage}</td><td>${statusBadge(nmStatus)}</td><td>${nmDetail}</td></tr>` +
-            `<tr><td><strong>Onboarding</strong></td><td>${onbCoverage}</td><td>${statusBadge(onbStatus)}</td><td>—</td></tr>` +
+            `<tr><td><strong>Text-to-Apply</strong></td><td>${ttaCoverage}</td><td>${featureBadge(ttaStatus)}</td><td>${ttaDetail}</td></tr>` +
+            `<tr><td><strong>Job Boost</strong></td><td>${boostCoverage}</td><td>${featureBadge(boostStatus)}</td><td>${boostDetail}</td></tr>` +
+            `<tr><td><strong>NextMatch AI</strong></td><td>${nmCoverage}</td><td>${featureBadge(nmStatus)}</td><td>${nmDetail}</td></tr>` +
+            `<tr><td><strong>Onboarding</strong></td><td>${onbCoverage}</td><td>${featureBadge(onbStatus)}</td><td>—</td></tr>` +
             noDataRow('LinkedIn');
 
         // ── Integrations section
