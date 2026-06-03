@@ -134,7 +134,7 @@ const METABASE_QUESTIONS = {
   jobStats: {
     id: 1469,
     columns: [
-      'account_id',
+      'account_id', 'account_name',
       'total_applied', 'total_shortlisted', 'total_interviewed', 'total_hired',
       'apply_to_hire_pct', 'apply_to_interview_pct',
       'avg_time_to_interview_hrs', 'avg_time_to_hire_hrs', 'avg_time_to_review_hrs',
@@ -330,11 +330,23 @@ async function main() {
     // 'create_date', 'renewal_date',
   ];
 
+  const hangingMbAccounts = [];
   for (const [name, mb] of Object.entries(mbMap)) {
-    if (!merged[name]) continue; // not in CSV — skip
+    if (!merged[name]) {
+      hangingMbAccounts.push(name); // in Metabase but not in CSV seed
+      continue;
+    }
     for (const key of MB_AUTO_KEYS) {
       if (mb[key] !== undefined) merged[name][key] = mb[key];
     }
+  }
+
+  if (hangingMbAccounts.length > 0) {
+    console.warn(`\n⚠️  HANGING METABASE ACCOUNTS (${hangingMbAccounts.length}) — present in Metabase but missing from CSV seed:`);
+    for (const name of hangingMbAccounts) {
+      console.warn(`   • ${name}`);
+    }
+    console.warn('   → Add these to the AM assignments CSV or check for name normalisation mismatches.\n');
   }
 
   // ── 4. Build NPS per-account summary for merged map ──────────
@@ -599,7 +611,7 @@ async function main() {
   }
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${snapshotRows.length} snapshots, ${flagAlerts.length} alerts posted in ${elapsed}s ===`);
+  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${snapshotRows.length} snapshots, ${flagAlerts.length} alerts posted in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
 }
 
 // ── Flag metric notes (human-readable trigger description) ────
