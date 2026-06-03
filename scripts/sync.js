@@ -26,13 +26,14 @@ import { normalizeName }                       from '../lib/normalize.js';
 import { loadAmAssignments }                   from '../lib/am.js';
 import { computeHealthScore, healthStatus, computeHireRate, npsBand, npsTrend } from '../lib/health.js';
 import { computeFlags, FLAG_LABELS, URGENT_FLAGS } from '../lib/flags.js';
-import { postFlagAlert }                       from '../lib/slack.js';
+import { postFlagAlert, postEscalationAlert }   from '../lib/slack.js';
 import {
   upsertAccounts,
   saveSnapshots,
   getYesterdaySnapshots,
   upsertNpsResponses,
   deleteStaleAccounts,
+  getRecentEscalations,
 } from '../lib/supabase.js';
 
 // ── Metabase question config ──────────────────────────────────
@@ -477,8 +478,9 @@ async function main() {
     const yesterday = yesterdayMap[acc.account_name] || null;
     const verbatims = recentVerbatimsMap[acc.account_name] || [];
 
-    // Stash yesterday's health score for use in flagMetricNote (not written to DB)
-    acc._prevHealthScore = yesterday?.health_score ?? null;
+    // Stash yesterday's health data for use in flagMetricNote (not written to DB)
+    acc._prevHealthScore  = yesterday?.health_score  ?? null;
+    acc._prevHealthStatus = yesterday?.health_status ?? null;
 
     const { flags, newlyTriggered } = computeFlags(acc, yesterday, verbatims);
 
@@ -554,6 +556,7 @@ async function main() {
     flag_time_to_invite_high:     acc.flag_time_to_invite_high     || false,
     flag_billing_balance:         acc.flag_billing_balance         || false,
     flag_health_score_drop:       acc.flag_health_score_drop       || false,
+    flag_health_tier_drop:        acc.flag_health_tier_drop        || false,
     flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
     flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
     last_synced:                 acc.last_synced,
@@ -589,6 +592,7 @@ async function main() {
     flag_time_to_invite_high:     acc.flag_time_to_invite_high     || false,
     flag_billing_balance:         acc.flag_billing_balance         || false,
     flag_health_score_drop:       acc.flag_health_score_drop       || false,
+    flag_health_tier_drop:        acc.flag_health_tier_drop        || false,
     flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
     flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
   })).filter(row => row.account_name); // only rows with a resolved account name
@@ -615,8 +619,34 @@ async function main() {
     }
   }
 
+  // ── 11. Post Slack alerts for newly added escalation notes ───
+  // Escalations are written to Supabase by the dashboard when an AM adds a note.
+  // We detect ones created in the last 24h and post to Slack here.
+  // Note: for real-time alerts consider a Supabase Database Webhook → SLACK_WEBHOOK_URL.
+  let escalationAlertCount = 0;
+  try {
+    const recentEscalations = await getRecentEscalations();
+    for (const esc of recentEscalations) {
+      // Only alert for managed accounts (match to merged map if possible)
+      const accName = esc.account_name;
+      const isMgd   = accName ? (merged[accName]?.is_managed ?? true) : true;
+      if (!isMgd) continue;
+      try {
+        await postEscalationAlert(esc, DASHBOARD_BASE);
+        escalationAlertCount++;
+      } catch (e) {
+        console.error(`Escalation Slack alert failed for ${accName}:`, e.message);
+      }
+    }
+    if (recentEscalations.length > 0) {
+      console.log(`Escalations: ${recentEscalations.length} found in last 24h, ${escalationAlertCount} alerted`);
+    }
+  } catch (e) {
+    console.error('getRecentEscalations failed (non-fatal):', e.message);
+  }
+
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${snapshotRows.length} snapshots, ${flagAlerts.length} alerts posted in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
+  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${snapshotRows.length} snapshots, ${flagAlerts.length} flag alerts, ${escalationAlertCount} escalation alerts in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
 }
 
 // ── Flag metric notes (human-readable trigger description) ────
@@ -637,6 +667,8 @@ function flagMetricNote(flagKey, acc) {
       return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
     case 'flag_health_score_drop':
       return `Health score dropped from ${acc._prevHealthScore ?? '?'} → ${acc.health_score} (≥10 point drop)`;
+    case 'flag_health_tier_drop':
+      return `Health tier: ${acc._prevHealthStatus ?? '?'} → ${acc.health_status}`;
     case 'flag_renewal_at_risk': {
       const renewalDate   = acc.renewal_date ? new Date(acc.renewal_date) : null;
       const daysToRenewal = renewalDate
