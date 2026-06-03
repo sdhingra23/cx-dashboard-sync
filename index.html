@@ -1398,11 +1398,11 @@
 
         // ── Text-to-Apply: derived from Q1329 (locs with no TTA apps) + total_locations
         // no_tta_apps_loc_count = locations within this account with 0 TTA applications
-        const totalLocs   = data.total_locations || data.active_locations || null;
+        const ttaTotalLocs = data.total_locations || data.active_locations || null;
         const noTtaLocs   = data.no_tta_apps_loc_count != null ? Number(data.no_tta_apps_loc_count) : null;
-        const ttaLocs     = (totalLocs != null && noTtaLocs != null) ? totalLocs - noTtaLocs : null;
-        const ttaCoverage = ttaLocs != null ? `${ttaLocs} / ${totalLocs} locations` : noTtaLocs === 0 ? 'All locations' : '—';
-        const ttaStatus   = ttaLocs != null ? (ttaLocs === totalLocs ? 'active' : ttaLocs > 0 ? 'partial' : 'unused') : 'no-data';
+        const ttaLocs     = (ttaTotalLocs != null && noTtaLocs != null) ? ttaTotalLocs - noTtaLocs : null;
+        const ttaCoverage = ttaLocs != null ? `${ttaLocs} / ${ttaTotalLocs} locations` : noTtaLocs === 0 ? 'All locations' : '—';
+        const ttaStatus   = ttaLocs != null ? (ttaLocs === ttaTotalLocs ? 'active' : ttaLocs > 0 ? 'partial' : 'unused') : 'no-data';
         const ttaDetail   = noTtaLocs != null && noTtaLocs > 0 ? `${noTtaLocs} location${noTtaLocs>1?'s':''} not using TTA` : ttaLocs != null ? 'All locations using TTA' : 'No location data';
 
         // ── Job Boost: derived from Q1437 (% locs with no boost)
