@@ -699,6 +699,8 @@
                     <h4 style="margin-bottom:6px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Location Configuration Gaps</h4>
                     <p style="font-size:13px;color:#6b7280;margin-bottom:16px;">% of locations missing each configuration. Red = &gt;50%, Amber = &gt;25%.</p>
                     <div class="gap-tiles" id="accGapTiles"></div>
+                    <h4 style="margin-bottom:10px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Integrations</h4>
+                    <div id="accIntegrations"></div>
                 </div>
 
                 <!-- TAB 2: Relationship -->
@@ -1415,7 +1417,12 @@
         const nmStatus      = !nmEnabled ? 'no-data' : nmCalls > 0 ? 'active' : 'unused';
         const nmDetail      = nmEnabled ? `${nmCalls} completed (90d)${data.nextmatch_last_used ? ' · last ' + daysSince(data.nextmatch_last_used)?.label : ''}` : 'Feature not requested';
 
-        // ── Onboarding & LinkedIn: no data source connected yet
+        // ── Onboarding: now wired from Q1474
+        const onbEnabled  = data.onboarding_enabled;
+        const onbStatus   = onbEnabled == null ? 'no-data' : onbEnabled ? 'active' : 'unused';
+        const onbCoverage = onbEnabled == null ? '—' : onbEnabled ? '✓ Enabled' : '✕ Not enabled';
+
+        // ── LinkedIn: still no data source
         const noDataRow = (label) =>
             `<tr><td><strong>${label}</strong></td><td style="color:#9ca3af;">—</td><td>${statusBadge('no-data')}</td><td style="color:#9ca3af;font-style:italic;">Not connected to a data source</td></tr>`;
 
@@ -1423,8 +1430,29 @@
             `<tr><td><strong>Text-to-Apply</strong></td><td>${ttaCoverage}</td><td>${statusBadge(ttaStatus)}</td><td>${ttaDetail}</td></tr>` +
             `<tr><td><strong>Job Boost</strong></td><td>${boostCoverage}</td><td>${statusBadge(boostStatus)}</td><td>${boostDetail}</td></tr>` +
             `<tr><td><strong>NextMatch AI</strong></td><td>${nmCoverage}</td><td>${statusBadge(nmStatus)}</td><td>${nmDetail}</td></tr>` +
-            noDataRow('Onboarding') +
+            `<tr><td><strong>Onboarding</strong></td><td>${onbCoverage}</td><td>${statusBadge(onbStatus)}</td><td>—</td></tr>` +
             noDataRow('LinkedIn');
+
+        // ── Integrations section
+        const INTEGRATION_LABELS = {
+            has_netchex:    'Netchex',
+            has_checkr:     'Checkr',
+            has_adp:        'ADP',
+            has_7shifts:    '7shifts',
+            has_chickfila:  'Chick-fil-A',
+            has_paychex:    'Paychex',
+            has_clearview:  'ClearView',
+            has_hr_alliance:'HR Alliance',
+        };
+        const activeIntegrations = Object.entries(INTEGRATION_LABELS)
+            .filter(([key]) => data[key])
+            .map(([, label]) => label);
+        const totalInt = data.total_integrations ?? activeIntegrations.length;
+        const intHtml = activeIntegrations.length
+            ? activeIntegrations.map(l => `<span style="display:inline-block;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:600;margin:3px 3px 3px 0;">${l}</span>`).join('')
+            : `<span style="color:#9ca3af;font-style:italic;">No integrations active</span>`;
+        document.getElementById('accIntegrations').innerHTML =
+            `<div style="margin-bottom:8px;font-size:13px;color:#6b7280;">${totalInt ?? 0} integration${totalInt !== 1 ? 's' : ''} active</div>${intHtml}`;
 
         const gapDefs = [
             { label: 'No Indeed Apps',  val: data.perc_locs_no_indeed      || 0 },

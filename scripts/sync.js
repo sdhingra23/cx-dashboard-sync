@@ -209,6 +209,17 @@ const METABASE_QUESTIONS = {
       applications_last_30d: 'sum',
     },
   },
+
+  // /question/1474 — Integrations + onboarding flag (one row per account)
+  integrations: {
+    id: 1474,
+    columns: [
+      'account_id', 'account_name',
+      'has_netchex', 'has_checkr', 'has_adp', 'has_7shifts',
+      'has_chickfila', 'has_paychex', 'has_clearview', 'has_hr_alliance',
+      'total_integrations', 'onboarding_enabled',
+    ],
+  },
 };
 
 const DASHBOARD_BASE = process.env.VERCEL_URL
@@ -324,11 +335,13 @@ async function main() {
     'open_jobs_count',
     // Applications last 30d (Q1472)
     'applications_30d',
+    // Integrations + onboarding (Q1474)
+    'has_netchex', 'has_checkr', 'has_adp', 'has_7shifts',
+    'has_chickfila', 'has_paychex', 'has_clearview', 'has_hr_alliance',
+    'total_integrations', 'onboarding_enabled',
     // ── Not yet available — add when Metabase questions exist ──
-    // 'no_connected_calendars',
     // 'job_boost_enabled', 'job_boost_last_used_days',
-    // 'feature_onboarding', 'feature_nextmatch', 'linkedin_enabled',
-    // 'create_date', 'renewal_date',
+    // 'linkedin_enabled',
   ];
 
   const hangingMbAccounts = [];
@@ -543,6 +556,16 @@ async function main() {
     avg_time_to_contact_days:    acc.avg_time_to_contact_days    ?? null,
     open_jobs_count:             acc.open_jobs_count             ?? null,
     applications_30d:            acc.applications_30d            ?? null,
+    onboarding_enabled:          acc.onboarding_enabled          ?? null,
+    has_netchex:                 acc.has_netchex                 ?? null,
+    has_checkr:                  acc.has_checkr                  ?? null,
+    has_adp:                     acc.has_adp                     ?? null,
+    has_7shifts:                 acc.has_7shifts                 ?? null,
+    has_chickfila:               acc.has_chickfila               ?? null,
+    has_paychex:                 acc.has_paychex                 ?? null,
+    has_clearview:               acc.has_clearview               ?? null,
+    has_hr_alliance:             acc.has_hr_alliance             ?? null,
+    total_integrations:          acc.total_integrations          ?? null,
     two_way_pct:                 acc.two_way_pct                 ?? null,
     employer_response_rate_pct:  acc.employer_response_rate_pct  ?? null,
     hire_rate_with_chat_pct:     acc.hire_rate_with_chat_pct     ?? null,
