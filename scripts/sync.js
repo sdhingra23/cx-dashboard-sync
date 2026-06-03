@@ -477,6 +477,9 @@ async function main() {
     const yesterday = yesterdayMap[acc.account_name] || null;
     const verbatims = recentVerbatimsMap[acc.account_name] || [];
 
+    // Stash yesterday's health score for use in flagMetricNote (not written to DB)
+    acc._prevHealthScore = yesterday?.health_score ?? null;
+
     const { flags, newlyTriggered } = computeFlags(acc, yesterday, verbatims);
 
     // Write flags back to the account object (for storage in accounts + snapshots)
@@ -544,14 +547,15 @@ async function main() {
     pendo_last_active:           acc.pendo_last_active           ?? null,
     pendo_days_active_per_visitor: acc.pendo_days_active_per_visitor ?? null,
     pendo_error_click_rate:      acc.pendo_error_click_rate      ?? null,
-    flag_churn_verbatim:         acc.flag_churn_verbatim         || false,
-    flag_promoter_flip:          acc.flag_promoter_flip          || false,
-    flag_zero_roi_new:           acc.flag_zero_roi_new           || false,
-    flag_new_account_zero_apps:  acc.flag_new_account_zero_apps  || false,
-    flag_paid_feature_lapsed:    acc.flag_paid_feature_lapsed    || false,
-    flag_hire_rate_low_streak:   acc.flag_hire_rate_low_streak   || false,
-    flag_time_to_invite_high:    acc.flag_time_to_invite_high    || false,
-    flag_billing_balance:        acc.flag_billing_balance        || false,
+    flag_churn_verbatim:          acc.flag_churn_verbatim          || false,
+    flag_promoter_flip:           acc.flag_promoter_flip           || false,
+    flag_zero_roi_new:            acc.flag_zero_roi_new            || false,
+    flag_paid_feature_lapsed:     acc.flag_paid_feature_lapsed     || false,
+    flag_time_to_invite_high:     acc.flag_time_to_invite_high     || false,
+    flag_billing_balance:         acc.flag_billing_balance         || false,
+    flag_health_score_drop:       acc.flag_health_score_drop       || false,
+    flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
+    flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
     last_synced:                 acc.last_synced,
   })).filter(row => row.account_name);
   await upsertAccounts(accountRows);
@@ -578,14 +582,15 @@ async function main() {
     hire_rate:                    acc.hire_rate,
     avg_time_to_invite_days:      acc.avg_time_to_invite_days,
     pendo_days_active_per_visitor: acc.pendo_days_active_per_visitor,
-    flag_churn_verbatim:          acc.flag_churn_verbatim || false,
-    flag_promoter_flip:           acc.flag_promoter_flip || false,
-    flag_zero_roi_new:            acc.flag_zero_roi_new || false,
-    flag_new_account_zero_apps:   acc.flag_new_account_zero_apps || false,
-    flag_paid_feature_lapsed:     acc.flag_paid_feature_lapsed || false,
-    flag_hire_rate_low_streak:    acc.flag_hire_rate_low_streak || false,
-    flag_time_to_invite_high:     acc.flag_time_to_invite_high || false,
-    flag_billing_balance:         acc.flag_billing_balance || false,
+    flag_churn_verbatim:          acc.flag_churn_verbatim          || false,
+    flag_promoter_flip:           acc.flag_promoter_flip           || false,
+    flag_zero_roi_new:            acc.flag_zero_roi_new            || false,
+    flag_paid_feature_lapsed:     acc.flag_paid_feature_lapsed     || false,
+    flag_time_to_invite_high:     acc.flag_time_to_invite_high     || false,
+    flag_billing_balance:         acc.flag_billing_balance         || false,
+    flag_health_score_drop:       acc.flag_health_score_drop       || false,
+    flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
+    flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
   })).filter(row => row.account_name); // only rows with a resolved account name
 
   await saveSnapshots(snapshotRows);
@@ -621,23 +626,30 @@ function flagMetricNote(flagKey, acc) {
     case 'flag_churn_verbatim':
       return `NPS verbatim in last 24h: "${(acc.nps_latest_verbatim || '').slice(0, 100)}"`;
     case 'flag_promoter_flip':
-      return `NPS: was ${acc.nps_prior_score} (promoter), now ${acc.nps_latest_score} (detractor) — Δ${(acc.nps_latest_score - acc.nps_prior_score)}`;
+      return `NPS: was ${acc.nps_prior_score} (promoter), now ${acc.nps_latest_score} (detractor) — Δ${acc.nps_latest_score - acc.nps_prior_score}`;
     case 'flag_zero_roi_new':
       return `${acc.perc_locs_no_indeed || 0}% locs no Indeed apps, ${acc.perc_locs_no_active_jobs || 0}% locs no active jobs (crossed 70% threshold)`;
-    case 'flag_new_account_zero_apps': {
+    case 'flag_paid_feature_lapsed':
+      return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
+    case 'flag_time_to_invite_high':
+      return `Avg time to invite: ${acc.avg_time_to_invite_days}d — newly crossed 7-day threshold`;
+    case 'flag_billing_balance':
+      return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
+    case 'flag_health_score_drop':
+      return `Health score dropped from ${acc._prevHealthScore ?? '?'} → ${acc.health_score} (≥10 point drop)`;
+    case 'flag_renewal_at_risk': {
+      const renewalDate   = acc.renewal_date ? new Date(acc.renewal_date) : null;
+      const daysToRenewal = renewalDate
+        ? Math.floor((renewalDate.getTime() - Date.now()) / 86400000)
+        : '?';
+      return `Renewal in ${daysToRenewal} days — health score: ${acc.health_score}`;
+    }
+    case 'flag_zero_apps_established': {
       const age = acc.create_date
         ? Math.floor((Date.now() - new Date(acc.create_date).getTime()) / 86400000)
         : '?';
-      return `Account created ${age} days ago — 0 applications received in last 30 days`;
+      return `${age} day-old account — 0 applications in last 30 days`;
     }
-    case 'flag_paid_feature_lapsed':
-      return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
-    case 'flag_hire_rate_low_streak':
-      return `Hire rate: ${Math.round((acc.hire_rate || 0) * 100)}% (below 15% for 2 consecutive days)`;
-    case 'flag_time_to_invite_high':
-      return `Avg time to invite: ${acc.avg_time_to_invite_days}d (threshold: 7d)`;
-    case 'flag_billing_balance':
-      return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
     default:
       return '';
   }
