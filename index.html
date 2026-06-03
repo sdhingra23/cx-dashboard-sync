@@ -783,8 +783,12 @@
     // ===================== DATA FETCH =====================
     function initApp() {
         fetch('/api/dashboard')
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) return r.text().then(t => { throw new Error(`API ${r.status}: ${t.slice(0,200)}`); });
+                return r.json();
+            })
             .then(data => {
+                if (!data.accounts) throw new Error(data.error || 'API returned no accounts — check Supabase credentials and RLS');
                 document.getElementById('loadingState').classList.add('hidden');
                 allAccounts = data.accounts;
                 vpData = data.vpData;
