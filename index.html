@@ -693,7 +693,7 @@
                 <div class="tab-content" id="accTab1">
                     <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Feature Adoption</h4>
                     <table class="acc-table" style="margin-bottom:28px;">
-                        <thead><tr><th>Feature</th><th>Enabled</th><th>Status</th><th>Activity (Last 90 Days)</th></tr></thead>
+                        <thead><tr><th>Feature</th><th>Coverage</th><th>Status</th><th>Detail</th></tr></thead>
                         <tbody id="featureTable"></tbody>
                     </table>
                     <h4 style="margin-bottom:6px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Location Configuration Gaps</h4>
@@ -1267,14 +1267,13 @@
             const days = Math.ceil((new Date() - d) / 86400000);
             return { days, label: days===0?'Today':days===1?'Yesterday':days+' days ago', date: dateStr.split('T')[0] };
         }
-        const lastActivity = daysSince(data.last_activity_date);
-        const lastMeeting  = daysSince(data.last_meeting_date);
-        const activityDays = lastActivity ? lastActivity.days : (lastMeeting ? lastMeeting.days : null);
+        // Activity risk badge — based on Pendo last active (connected data)
+        const pendoActivity = daysSince(data.pendo_last_active);
         let badgeHtml = '';
-        if (activityDays !== null) {
-            if (activityDays > 60)      badgeHtml = `<span class="activity-risk-badge crit">⚠ No Activity ${activityDays}d</span>`;
-            else if (activityDays > 30) badgeHtml = `<span class="activity-risk-badge warn">↗ Low Activity ${activityDays}d</span>`;
-            else                        badgeHtml = `<span class="activity-risk-badge ok">✓ Active</span>`;
+        if (pendoActivity !== null) {
+            if (pendoActivity.days > 60)      badgeHtml = `<span class="activity-risk-badge crit">⚠ No Activity ${pendoActivity.days}d</span>`;
+            else if (pendoActivity.days > 30) badgeHtml = `<span class="activity-risk-badge warn">↗ Low Activity ${pendoActivity.days}d</span>`;
+            else                              badgeHtml = `<span class="activity-risk-badge ok">✓ Active</span>`;
         }
         document.getElementById('accActivityRiskBadge').innerHTML = badgeHtml;
 
@@ -1383,17 +1382,49 @@
             </div>`;
 
         // --- TAB 1: Platform Health ---
-        const gfs = (enabled, active) => {
-            if (!enabled) return '<span class="status-indicator disabled">Not Enabled</span>';
-            if (active)   return '<span class="status-indicator enabled-used">✓ Active</span>';
-            return '<span class="status-indicator enabled-unused">✕ Unused</span>';
+        const statusBadge = (type) => {
+            if (type === 'active')       return '<span class="status-indicator enabled-used">✓ Active</span>';
+            if (type === 'partial')      return '<span class="status-indicator enabled-unused">◑ Partial</span>';
+            if (type === 'unused')       return '<span class="status-indicator enabled-unused">✕ Unused</span>';
+            if (type === 'no-data')      return '<span class="status-indicator disabled">No data</span>';
+            return '<span class="status-indicator disabled">—</span>';
         };
-        document.getElementById('featureTable').innerHTML = `
-            <tr><td><strong>Onboarding</strong></td><td>${data.onboarding_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.onboarding_enabled,data.onboarding_enabled)}</td><td>—</td></tr>
-            <tr><td><strong>NextMatch AI</strong></td><td>${data.nextmatch_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.nextmatch_enabled,data.nextmatch_calls_90d>0)}</td><td>${data.nextmatch_calls_90d??0} AI calls (90d)</td></tr>
-            <tr><td><strong>Job Boost</strong></td><td>${data.job_boost_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.job_boost_enabled,data.job_boost_last_used_days>0&&data.job_boost_last_used_days<90)}</td><td>Last used ${data.job_boost_last_used_days>0?data.job_boost_last_used_days+'d ago':'—'}</td></tr>
-            <tr><td><strong>Text-to-Apply</strong></td><td>${data.tta_flow_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.tta_flow_enabled,data.tta_flow_applications_90d>0)}</td><td>${data.tta_flow_applications_90d>0?data.tta_flow_applications_90d+' apps (90d)':'No apps in 90d'}</td></tr>
-            <tr><td><strong>LinkedIn</strong></td><td>${data.linkedin_enabled?'✓ Yes':'✕ No'}</td><td>${gfs(data.linkedin_enabled,data.linkedin_enabled)}</td><td>—</td></tr>`;
+
+        // ── Text-to-Apply: derived from Q1329 (locs with no TTA apps) + total_locations
+        // no_tta_apps_loc_count = locations within this account with 0 TTA applications
+        const totalLocs   = data.total_locations || data.active_locations || null;
+        const noTtaLocs   = data.no_tta_apps_loc_count != null ? Number(data.no_tta_apps_loc_count) : null;
+        const ttaLocs     = (totalLocs != null && noTtaLocs != null) ? totalLocs - noTtaLocs : null;
+        const ttaCoverage = ttaLocs != null ? `${ttaLocs} / ${totalLocs} locations` : noTtaLocs === 0 ? 'All locations' : '—';
+        const ttaStatus   = ttaLocs != null ? (ttaLocs === totalLocs ? 'active' : ttaLocs > 0 ? 'partial' : 'unused') : 'no-data';
+        const ttaDetail   = noTtaLocs != null && noTtaLocs > 0 ? `${noTtaLocs} location${noTtaLocs>1?'s':''} not using TTA` : ttaLocs != null ? 'All locations using TTA' : 'No location data';
+
+        // ── Job Boost: derived from Q1437 (% locs with no boost)
+        // perc_locs_no_job_boosts = % of locations NOT boosting → invert for coverage
+        const noBoostPct    = data.perc_locs_no_job_boosts != null ? Number(data.perc_locs_no_job_boosts) : null;
+        const boostPct      = noBoostPct != null ? Math.round(100 - noBoostPct) : null;
+        const boostCoverage = boostPct != null ? `${boostPct}% of locations` : '—';
+        const boostStatus   = boostPct == null ? 'no-data' : boostPct === 0 ? 'unused' : boostPct < 50 ? 'partial' : 'active';
+        const boostDetail   = noBoostPct != null ? `${noBoostPct}% of locations have no active boost` : 'No config data';
+
+        // ── NextMatch AI: directly wired via Q1468
+        const nmRequested   = Number(data.nextmatch_requested) || 0;
+        const nmCalls       = Number(data.nextmatch_calls_90d) || 0;
+        const nmEnabled     = nmRequested > 0;
+        const nmCoverage    = nmEnabled ? `${nmRequested} requested` : '—';
+        const nmStatus      = !nmEnabled ? 'no-data' : nmCalls > 0 ? 'active' : 'unused';
+        const nmDetail      = nmEnabled ? `${nmCalls} completed (90d)${data.nextmatch_last_used ? ' · last ' + daysSince(data.nextmatch_last_used)?.label : ''}` : 'Feature not requested';
+
+        // ── Onboarding & LinkedIn: no data source connected yet
+        const noDataRow = (label) =>
+            `<tr><td><strong>${label}</strong></td><td style="color:#9ca3af;">—</td><td>${statusBadge('no-data')}</td><td style="color:#9ca3af;font-style:italic;">Not connected to a data source</td></tr>`;
+
+        document.getElementById('featureTable').innerHTML =
+            `<tr><td><strong>Text-to-Apply</strong></td><td>${ttaCoverage}</td><td>${statusBadge(ttaStatus)}</td><td>${ttaDetail}</td></tr>` +
+            `<tr><td><strong>Job Boost</strong></td><td>${boostCoverage}</td><td>${statusBadge(boostStatus)}</td><td>${boostDetail}</td></tr>` +
+            `<tr><td><strong>NextMatch AI</strong></td><td>${nmCoverage}</td><td>${statusBadge(nmStatus)}</td><td>${nmDetail}</td></tr>` +
+            noDataRow('Onboarding') +
+            noDataRow('LinkedIn');
 
         const gapDefs = [
             { label: 'No Indeed Apps',  val: data.perc_locs_no_indeed      || 0 },
@@ -1419,20 +1450,17 @@
         document.getElementById('escalationInput').value = data.manual_escalation || '';
         document.getElementById('escStatus').textContent = '';
 
-        // Activity timeline
+        // Activity timeline — shows connected data sources only
         function actRow(label, info) {
             if (!info) return `<div class="activity-row"><span class="activity-row-label">${label}</span><span class="activity-row-value" style="color:#9ca3af;">—</span></div>`;
             const cls = info.days > 60 ? 'stale' : info.days > 30 ? 'warn' : '';
             return `<div class="activity-row"><span class="activity-row-label">${label}</span><span class="activity-row-value ${cls}">${info.label} <span style="font-weight:400;color:#9ca3af;font-size:11px;">(${info.date})</span></span></div>`;
         }
-        const nextActivity = data.next_activity_date ? data.next_activity_date.split('T')[0] : null;
         document.getElementById('accActivityTimeline').innerHTML =
-            actRow('Last Meeting',   daysSince(data.last_meeting_date)) +
-            actRow('Last Activity',  lastActivity) +
-            actRow('Last Contacted', daysSince(data.last_contacted_date)) +
-            actRow('Last Call',      daysSince(data.last_logged_call_date)) +
-            actRow('Last Email',     daysSince(data.last_logged_email_date)) +
-            `<div class="activity-row"><span class="activity-row-label">Next Scheduled</span><span class="activity-row-value">${nextActivity||'<span style="color:#9ca3af;">None scheduled</span>'}</span></div>`;
+            actRow('Last Platform Activity', daysSince(data.pendo_last_active)) +
+            actRow('Last NPS Response',      daysSince(data.nps_latest_response_date)) +
+            actRow('Last NextMatch Use',     daysSince(data.nextmatch_last_used)) +
+            actRow('Data Last Synced',       daysSince(data.last_synced));
     }
 
     // ===================== WRITE ACTIONS =====================
