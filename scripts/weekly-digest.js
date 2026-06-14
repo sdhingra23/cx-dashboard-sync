@@ -230,9 +230,6 @@ function weeklyFlagNote(flagKey, acc) {
     case 'flag_hire_rate_low_streak':
       return `Hire rate ${Math.round((acc.hire_rate || 0) * 100)}% — below 15% for 2+ consecutive days`;
 
-    case 'flag_time_to_invite_high':
-      return `Avg time to invite: ${acc.avg_time_to_invite_days ?? '?'}d (threshold: 7d)`;
-
     default:
       return '';
   }

@@ -684,8 +684,6 @@ function flagMetricNote(flagKey, acc) {
       return `${acc.perc_locs_no_indeed || 0}% locs no Indeed apps, ${acc.perc_locs_no_active_jobs || 0}% locs no active jobs (crossed 70% threshold)`;
     case 'flag_paid_feature_lapsed':
       return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
-    case 'flag_time_to_invite_high':
-      return `Avg time to invite: ${acc.avg_time_to_invite_days}d — newly crossed 7-day threshold`;
     case 'flag_billing_balance':
       return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
     case 'flag_health_score_drop':
