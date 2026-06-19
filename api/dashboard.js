@@ -15,13 +15,24 @@ export default async function handler(req, res) {
       process.env.SUPABASE_SERVICE_KEY
     );
 
-    const { data, error } = await sb
-      .from('accounts')
-      .select('*')
-      .order('account_name', { ascending: true })
-      .limit(10000);
-
-    if (error) throw error;
+    // Supabase PostgREST caps responses at db-max-rows (default 1,000).
+    // Paginate in 500-row pages to guarantee we retrieve all accounts.
+    const PAGE = 500;
+    let data = [];
+    let page = 0;
+    while (true) {
+      const from = page * PAGE;
+      const { data: rows, error } = await sb
+        .from('accounts')
+        .select('*')
+        .order('account_name', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!rows || rows.length === 0) break;
+      data = data.concat(rows);
+      if (rows.length < PAGE) break;
+      page++;
+    }
 
     // Build the shape the frontend expects:
     //   { accounts: { [account_name]: accountObj }, vpData: {...} }
