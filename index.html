@@ -352,6 +352,21 @@
             <h1 id="pageTitle">🌍 Global Executive Summary</h1>
         </div>
         <div class="controls">
+            <div id="globalSearchWrapper" style="position:relative;">
+                <input type="text" id="globalSearch" class="search-input"
+                       placeholder="🔍 Find any account…"
+                       style="width:220px;"
+                       oninput="handleGlobalSearch()"
+                       onkeydown="handleGlobalSearchKey(event)"
+                       autocomplete="off">
+                <div id="globalSearchResults"
+                     style="display:none;position:absolute;top:calc(100% + 4px);right:0;
+                            width:340px;max-height:320px;overflow-y:auto;
+                            background:var(--surface);border:1px solid var(--border);
+                            border-radius:var(--r);box-shadow:0 8px 16px rgba(15,23,42,.12);
+                            z-index:500;">
+                </div>
+            </div>
             <select id="brandSelect" onchange="handleBrandSelection()" style="display:none">
                 <option value="">🏢 View by Brand...</option>
             </select>
@@ -803,6 +818,16 @@
                 const bSelect = document.getElementById('brandSelect');
                 bSelect.innerHTML = '<option value="">🏢 View by Brand...</option>' +
                     brandNames.map(b => `<option value="${b}">${b} Portfolio</option>`).join('');
+
+                // Handle ?account= deep-link (from Slack alerts)
+                const urlAccount = new URLSearchParams(window.location.search).get('account');
+                if (urlAccount) {
+                    // Exact match first, then case-insensitive fallback
+                    const key = allAccounts[urlAccount]
+                        ? urlAccount
+                        : Object.keys(allAccounts).find(k => k.toLowerCase() === urlAccount.toLowerCase());
+                    if (key) { viewAccount(key); return; }
+                }
 
                 loadVPDashboard();
             })
@@ -1494,6 +1519,102 @@
             actRow('Last NextMatch Use',     daysSince(data.nextmatch_last_used)) +
             actRow('Data Last Synced',       daysSince(data.last_synced));
     }
+
+    // ===================== GLOBAL SEARCH =====================
+    let globalSearchActive = -1; // keyboard-selected result index
+
+    function handleGlobalSearch() {
+        const q = (document.getElementById('globalSearch').value || '').trim().toLowerCase();
+        const box = document.getElementById('globalSearchResults');
+        globalSearchActive = -1;
+
+        if (q.length < 2) { box.style.display = 'none'; return; }
+
+        const matches = Object.entries(allAccounts)
+            .filter(([key]) => key.toLowerCase().includes(q))
+            .sort((a, b) => {
+                // Exact-start matches first, then by ARR descending
+                const aStarts = a[0].toLowerCase().startsWith(q) ? 0 : 1;
+                const bStarts = b[0].toLowerCase().startsWith(q) ? 0 : 1;
+                if (aStarts !== bStarts) return aStarts - bStarts;
+                return (b[1].arr || 0) - (a[1].arr || 0);
+            })
+            .slice(0, 12);
+
+        if (matches.length === 0) { box.style.display = 'none'; return; }
+
+        box.innerHTML = matches.map(([key, acc], i) => {
+            const am     = acc.account_manager || 'Unassigned';
+            const arr    = formatMoney(acc.arr || 0);
+            const status = acc.health_status || 'unknown';
+            const dot    = status === 'red' ? '#dc2626' : status === 'amber' ? '#f59e0b' : '#059669';
+            return `<div data-key="${key}"
+                        style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-light);
+                               display:flex;justify-content:space-between;align-items:center;gap:8px;"
+                        onmousedown="selectGlobalResult('${key.replace(/'/g, "\\'")}')"
+                        onmouseenter="highlightGlobalResult(${i})">
+                      <div>
+                        <div style="font-size:13px;font-weight:600;color:var(--text);">${acc.account_name}</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${am}</div>
+                      </div>
+                      <div style="text-align:right;flex-shrink:0;">
+                        <div style="font-size:12px;font-weight:700;color:var(--text);">${arr}</div>
+                        <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:2px;">
+                          <span style="width:6px;height:6px;border-radius:50%;background:${dot};display:inline-block;"></span>
+                          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;">${status}</span>
+                        </div>
+                      </div>
+                    </div>`;
+        }).join('');
+
+        box.style.display = 'block';
+    }
+
+    function handleGlobalSearchKey(e) {
+        const box = document.getElementById('globalSearchResults');
+        const items = box.querySelectorAll('[data-key]');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            globalSearchActive = Math.min(globalSearchActive + 1, items.length - 1);
+            highlightGlobalResult(globalSearchActive);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            globalSearchActive = Math.max(globalSearchActive - 1, 0);
+            highlightGlobalResult(globalSearchActive);
+        } else if (e.key === 'Enter' && globalSearchActive >= 0) {
+            e.preventDefault();
+            selectGlobalResult(items[globalSearchActive].dataset.key);
+        } else if (e.key === 'Escape') {
+            closeGlobalSearch();
+        }
+    }
+
+    function highlightGlobalResult(index) {
+        globalSearchActive = index;
+        document.querySelectorAll('#globalSearchResults [data-key]').forEach((el, i) => {
+            el.style.background = i === index ? 'var(--surface-2)' : '';
+        });
+    }
+
+    function selectGlobalResult(key) {
+        closeGlobalSearch();
+        viewAccount(key);
+    }
+
+    function closeGlobalSearch() {
+        document.getElementById('globalSearch').value = '';
+        document.getElementById('globalSearchResults').style.display = 'none';
+        globalSearchActive = -1;
+    }
+
+    // Close dropdown when clicking outside the search wrapper
+    document.addEventListener('click', e => {
+        if (!document.getElementById('globalSearchWrapper').contains(e.target)) {
+            document.getElementById('globalSearchResults').style.display = 'none';
+        }
+    });
 
     // ===================== WRITE ACTIONS =====================
     function submitEscalation() {

@@ -504,7 +504,7 @@ async function main() {
     for (const [flagKey, isNew] of Object.entries(newlyTriggered)) {
       if (!isNew) continue;
       const label  = FLAG_LABELS[flagKey] || flagKey;
-      const metric = flagMetricNote(flagKey, acc);
+      const metric = flagMetricNote(flagKey, acc, yesterday);
       flagAlerts.push({ flagKey, label, acc, metric });
     }
   }
@@ -674,38 +674,122 @@ async function main() {
 
 // ── Flag metric notes (human-readable trigger description) ────
 
-function flagMetricNote(flagKey, acc) {
+function flagMetricNote(flagKey, acc, yesterday) {
   switch (flagKey) {
     case 'flag_churn_verbatim':
-      return `NPS verbatim in last 24h: "${(acc.nps_latest_verbatim || '').slice(0, 100)}"`;
+      return `NPS verbatim in last 24h: "${(acc.nps_latest_verbatim || '').slice(0, 120)}"`;
+
     case 'flag_promoter_flip':
-      return `NPS: was ${acc.nps_prior_score} (promoter), now ${acc.nps_latest_score} (detractor) — Δ${acc.nps_latest_score - acc.nps_prior_score}`;
+      return `NPS: was ${acc.nps_prior_score} (promoter) → now ${acc.nps_latest_score} (detractor) — Δ${acc.nps_latest_score - acc.nps_prior_score}`;
+
     case 'flag_zero_roi_new':
       return `${acc.perc_locs_no_indeed || 0}% locs no Indeed apps, ${acc.perc_locs_no_active_jobs || 0}% locs no active jobs (crossed 70% threshold)`;
+
     case 'flag_paid_feature_lapsed':
       return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
+
     case 'flag_billing_balance':
       return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
-    case 'flag_health_score_drop':
-      return `Health score dropped from ${acc._prevHealthScore ?? '?'} → ${acc.health_score} (≥10 point drop)`;
-    case 'flag_health_tier_drop':
-      return `Health tier: ${acc._prevHealthStatus ?? '?'} → ${acc.health_status}`;
+
+    case 'flag_health_score_drop': {
+      const prev  = yesterday?.health_score ?? acc._prevHealthScore;
+      const drop  = (prev ?? 0) - acc.health_score;
+      const drivers = healthDropDrivers(acc, yesterday);
+      const driverStr = drivers.length ? `\nDrivers: ${drivers.join(' | ')}` : '';
+      return `Score: ${prev ?? '?'} → ${acc.health_score} (↓${drop} pts)${driverStr}`;
+    }
+
+    case 'flag_health_tier_drop': {
+      const prev = yesterday?.health_status ?? acc._prevHealthStatus;
+      const drivers = healthDropDrivers(acc, yesterday);
+      const driverStr = drivers.length ? `\nDrivers: ${drivers.join(' | ')}` : '';
+      return `Tier: ${prev ?? '?'} → ${acc.health_status} (score: ${acc.health_score})${driverStr}`;
+    }
+
     case 'flag_renewal_at_risk': {
       const renewalDate   = acc.renewal_date ? new Date(acc.renewal_date) : null;
       const daysToRenewal = renewalDate
         ? Math.floor((renewalDate.getTime() - Date.now()) / 86400000)
         : '?';
-      return `Renewal in ${daysToRenewal} days — health score: ${acc.health_score}`;
+      const risks = [];
+      if ((Number(acc.perc_locs_no_indeed) || 0) > 20)    risks.push(`${acc.perc_locs_no_indeed}% locs no Indeed`);
+      if (acc.nps_latest_band === 'detractor')             risks.push(`NPS ${acc.nps_latest_score} (detractor)`);
+      else if (acc.nps_latest_band === 'passive')          risks.push(`NPS ${acc.nps_latest_score} (passive)`);
+      if ((Number(acc.outstanding_balance) || 0) > 0)     risks.push(`$${Number(acc.outstanding_balance).toLocaleString()} unpaid`);
+      if ((Number(acc.applications_30d) || 0) === 0)      risks.push('0 apps in 30d');
+      const riskStr = risks.length ? ` | ${risks.join(', ')}` : '';
+      return `Renewal in ${daysToRenewal} days — health score: ${acc.health_score}${riskStr}`;
     }
+
     case 'flag_zero_apps_established': {
       const age = acc.create_date
         ? Math.floor((Date.now() - new Date(acc.create_date).getTime()) / 86400000)
         : '?';
-      return `${age} day-old account — 0 applications in last 30 days`;
+      const ctx = [];
+      if (acc.open_jobs_count   != null) ctx.push(`${acc.open_jobs_count} jobs open`);
+      if (acc.active_locations  != null) ctx.push(`${acc.active_locations} active locs`);
+      if ((Number(acc.perc_locs_no_active_jobs) || 0) > 0)
+        ctx.push(`${acc.perc_locs_no_active_jobs}% locs no active jobs`);
+      const ctxStr = ctx.length ? ` | ${ctx.join(', ')}` : '';
+      return `${age} day-old account — 0 applications in last 30 days${ctxStr}`;
     }
+
     default:
       return '';
   }
+}
+
+// ── Diagnose which health-score components drove a drop ───────
+// Compares today's acc fields against yesterday's snapshot.
+// Returns an array of human-readable driver strings (may be empty).
+
+function healthDropDrivers(acc, yesterday) {
+  const drivers = [];
+
+  // Pipeline (25%): perc_locs_no_indeed
+  const noIndeedNow  = Number(acc.perc_locs_no_indeed) || 0;
+  const noIndeedPrev = yesterday?.perc_locs_no_indeed != null
+    ? Number(yesterday.perc_locs_no_indeed) : noIndeedNow;
+  if (acc.is_zero_roi && !yesterday?.is_zero_roi) {
+    drivers.push(`Pipeline: newly Zero-ROI (${noIndeedNow}% locs no Indeed)`);
+  } else if (noIndeedNow - noIndeedPrev >= 10) {
+    drivers.push(`Pipeline ↓ (Indeed gap: ${noIndeedPrev}% → ${noIndeedNow}%)`);
+  }
+
+  // NPS (20%): band change or newly detractor+declining
+  const bandNow  = acc.nps_latest_band;
+  const bandPrev = yesterday?.nps_band;
+  if (bandNow && bandPrev && bandNow !== bandPrev) {
+    drivers.push(`NPS ↓ (${bandPrev} → ${bandNow}, score: ${acc.nps_latest_score})`);
+  } else if (acc.nps_trend === 'declining' && bandNow === 'detractor') {
+    drivers.push(`NPS declining (detractor, score: ${acc.nps_latest_score})`);
+  }
+
+  // Billing (15%): newly appeared balance
+  const balNow  = Number(acc.outstanding_balance) || 0;
+  const balPrev = yesterday?.outstanding_balance != null
+    ? Number(yesterday.outstanding_balance) : balNow;
+  if (balNow > 0 && balPrev === 0) {
+    drivers.push(`Billing: new $${balNow.toLocaleString()} balance`);
+  }
+
+  // Activity (25%): applications_30d dropped to 0
+  const appsNow  = Number(acc.applications_30d);
+  const appsPrev = yesterday?.applications_30d != null
+    ? Number(yesterday.applications_30d) : appsNow;
+  if (!isNaN(appsNow) && !isNaN(appsPrev) && appsNow === 0 && appsPrev > 0) {
+    drivers.push(`Activity ↓ (0 apps this month, was ${appsPrev})`);
+  }
+
+  // Pendo engagement (15%): significant drop
+  const pendoNow  = Number(acc.pendo_days_active_per_visitor);
+  const pendoPrev = yesterday?.pendo_days_active_per_visitor != null
+    ? Number(yesterday.pendo_days_active_per_visitor) : pendoNow;
+  if (!isNaN(pendoNow) && !isNaN(pendoPrev) && pendoPrev - pendoNow >= 5) {
+    drivers.push(`Engagement ↓ (${pendoNow.toFixed(1)} days/visitor, was ${pendoPrev.toFixed(1)})`);
+  }
+
+  return drivers;
 }
 
 main().catch(err => {
