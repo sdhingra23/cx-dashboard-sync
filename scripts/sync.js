@@ -31,6 +31,7 @@ import {
   upsertAccounts,
   saveSnapshots,
   getYesterdaySnapshots,
+  getSnapshotNDaysAgo,
   upsertNpsResponses,
   deleteStaleAccounts,
   getRecentEscalations,
@@ -430,6 +431,13 @@ async function main() {
     Object.assign(merged[name], activity);
   }
 
+  // Load 7-days-ago snapshots for billing grace-period check.
+  // Used below to compute billing_balance_effective per account.
+  const sevenDaysAgoMap = await getSnapshotNDaysAgo(7).catch(e => {
+    console.error('Could not load 7-day snapshots (billing grace period disabled):', e.message);
+    return {};
+  });
+
   // ── Compute derived fields ────────────────────────────────────
   for (const acc of Object.values(merged)) {
     // perc_jobs_no_salaries: derived from jobs_without_salary ÷ total_jobs_count
@@ -457,6 +465,15 @@ async function main() {
 
     // hire_rate (null when no interview data)
     acc.hire_rate = computeHireRate(acc);
+
+    // billing_balance_effective: only penalise health score for balances that
+    // (a) exceed 10% of ARR — filters out small ACH-in-transit invoices, and
+    // (b) have been present for 7+ days — grace period for normal payment processing.
+    const rawBalance   = Number(acc.outstanding_balance) || 0;
+    const arrThreshold = (Number(acc.arr) || 0) * 0.10;
+    const balanceWas7dAgo = Number(sevenDaysAgoMap[acc.account_name]?.outstanding_balance) || 0;
+    acc.billing_balance_effective =
+      (rawBalance > arrThreshold && balanceWas7dAgo > 0) ? rawBalance : 0;
 
     // health_score + health_status
     acc.health_score  = computeHealthScore(acc);
