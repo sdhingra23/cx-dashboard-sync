@@ -1,5 +1,7 @@
 // POST /api/gut-score
-// Writes a CX manual gut score to the gut_scores table.
+// Sets accounts.cx_gut_score (the value the dashboard reads/displays and
+// factors into health_score), and logs the submission to gut_scores as an
+// audit trail of who scored what and when.
 //
 // Body: { account_name, score, notes?, scored_by? }
 
@@ -26,6 +28,13 @@ export default async function handler(req, res) {
       process.env.SUPABASE_URL,
       process.env.SUPABASE_SERVICE_KEY
     );
+
+    const { error: updateError } = await sb
+      .from('accounts')
+      .update({ cx_gut_score: numScore })
+      .eq('account_name', account_name);
+
+    if (updateError) throw updateError;
 
     const { data, error } = await sb
       .from('gut_scores')

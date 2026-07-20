@@ -35,6 +35,7 @@ import {
   upsertNpsResponses,
   deleteStaleAccounts,
   getRecentEscalations,
+  getAllAccounts,
 } from '../lib/supabase.js';
 
 // ── Metabase question config ──────────────────────────────────
@@ -246,7 +247,7 @@ async function main() {
   }
 
   // ── 2. Fetch all sources in parallel ────────────────────────
-  const [mbMap, cbRows, npsResponses, pendoActivity] = await Promise.all([
+  const [mbMap, cbRows, npsResponses, pendoActivity, existingAccounts] = await Promise.all([
     mbToken
       ? buildMetabaseData(METABASE_QUESTIONS, mbToken).catch(e => {
           console.error('Metabase buildData failed:', e.message); return {};
@@ -264,7 +265,22 @@ async function main() {
     fetchAccountActivity(process.env.PENDO_API_KEY).catch(e => {
       console.error('Pendo activity fetch failed:', e.message); return {};
     }),
+
+    // Existing accounts (for cx_gut_score — set directly via /api/gut-score,
+    // never present in the merged sources below, so it must be re-attached
+    // here or it stays neutral in every recomputed health score).
+    getAllAccounts().catch(e => {
+      console.error('Could not load existing accounts (cx_gut_score will be neutral this run):', e.message);
+      return [];
+    }),
   ]);
+
+  const existingGutScoreByName = {};
+  for (const row of existingAccounts) {
+    if (row.cx_gut_score !== null && row.cx_gut_score !== undefined) {
+      existingGutScoreByName[row.account_name] = row.cx_gut_score;
+    }
+  }
 
   console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}`);
 
@@ -442,6 +458,11 @@ async function main() {
 
   // ── Compute derived fields ────────────────────────────────────
   for (const acc of Object.values(merged)) {
+    // Re-attach the manually-entered CX gut score so it's actually reflected
+    // in this run's computeHealthScore() — it's never present in the merged
+    // sources above since it's written directly to Supabase by /api/gut-score.
+    acc.cx_gut_score = existingGutScoreByName[acc.account_name] ?? null;
+
     // perc_jobs_no_salaries: derived from jobs_without_salary ÷ total_jobs_count
     // Uses total_jobs_count_salary (from Q1463) if available, falls back to total_jobs_count (Q1438)
     const totalJobs = Number(acc.total_jobs_count_salary || acc.total_jobs_count) || 0;
