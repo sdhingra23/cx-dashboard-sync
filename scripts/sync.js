@@ -300,8 +300,10 @@ async function main() {
     merged[name].cb_customer_count   = cb.cb_customer_count;
     merged[name].create_date         = cb.create_date  ?? null;
     merged[name].renewal_date        = cb.renewal_date ?? null;
-    // Use Chargebee ARR only when the CSV didn't set an explicit value
-    if (merged[name].arr === null) merged[name].arr = cb.arr ?? 0;
+    // Live Chargebee ARR always wins when the account has billing data —
+    // the CSV's arr column is a manually-maintained snapshot and only
+    // serves as a fallback for accounts not yet found in Chargebee.
+    merged[name].arr = cb.arr ?? 0;
   }
 
   // Merge Metabase (auto columns)
