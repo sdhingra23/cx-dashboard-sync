@@ -6,6 +6,11 @@ on:
     - cron: '0 6 * * *'
   # Allow manual trigger from the Actions tab
   workflow_dispatch:
+    inputs:
+      skip_slack:
+        description: 'Skip Slack notifications for this run'
+        type: boolean
+        default: false
 
 jobs:
   # ── Daily sync ────────────────────────────────────────────────
@@ -36,6 +41,7 @@ jobs:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           VERCEL_URL:           ${{ secrets.VERCEL_URL }}
+          DISABLE_SLACK:        ${{ github.event.inputs.skip_slack }}
         run: node scripts/sync.js
 
   # ── Monday-only weekly digest ─────────────────────────────────
