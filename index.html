@@ -615,6 +615,7 @@
                     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
                         <div class="status-badge" id="statusBadge"><span id="statusIcon">⚠️</span> <span id="statusText">CRITICAL</span></div>
                         <span id="accActivityRiskBadge"></span>
+                        <span id="accLoginStaleBadge"></span>
                         <span id="accVelocityBadge"></span>
                     </div>
                     <h2 id="accNameDisplay" style="margin:0 0 6px 0;font-size:24px;font-weight:800;color:#111827;">Account Name</h2>
@@ -1015,6 +1016,9 @@
                 if (acc.health_status === 'red') tags.push('<span class="risk-pill">Low Health Score</span>');
                 if (acc.perc_locs_no_indeed > 0) tags.push(`<span class="risk-pill">${acc.perc_locs_no_indeed}% locs missing Indeed</span>`);
                 if (acc.nps_latest_band === 'detractor') tags.push('<span class="risk-pill orange">NPS Detractor</span>');
+                if (acc.flag_login_stale_90) tags.push('<span class="risk-pill">💤 No login 90+d</span>');
+                else if (acc.flag_login_stale_30) tags.push('<span class="risk-pill">💤 No login 30+d</span>');
+                else if (acc.flag_login_stale_14) tags.push('<span class="risk-pill">💤 No login 14+d</span>');
                 if (tags.length === 0) tags.push('<span class="status-badge green">Healthy</span>');
                 const arrColor = (acc.health_status === 'red' || acc.has_balance || acc.manual_escalation) ? '#b91c1c' : '#111827';
                 return `<tr class="clickable-row" data-account-id="${escapeAttr(acc.id)}">
@@ -1319,6 +1323,13 @@
             else                              badgeHtml = `<span class="activity-risk-badge ok">✓ Active</span>`;
         }
         document.getElementById('accActivityRiskBadge').innerHTML = badgeHtml;
+
+        // Login staleness badge — no-login flags computed server-side (14/30/90 day thresholds)
+        let loginStaleHtml = '';
+        if (data.flag_login_stale_90)      loginStaleHtml = `<span class="activity-risk-badge crit">💤 No Login 90+d</span>`;
+        else if (data.flag_login_stale_30) loginStaleHtml = `<span class="activity-risk-badge warn">💤 No Login 30+d</span>`;
+        else if (data.flag_login_stale_14) loginStaleHtml = `<span class="activity-risk-badge warn">💤 No Login 14+d</span>`;
+        document.getElementById('accLoginStaleBadge').innerHTML = loginStaleHtml;
 
         // NPS velocity badge
         const npsDelta = (data.nps_latest_score != null && data.nps_prior_score != null) ? data.nps_latest_score - data.nps_prior_score : null;

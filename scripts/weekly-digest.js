@@ -6,17 +6,20 @@
 // Reads entirely from Supabase — no fresh external fetching.
 //
 // Posts to Slack (all to the same webhook):
-//  1. Weekly NPS summary + ARR at-risk movement + repeat detractors
+//  1. ARR at-risk movement
 //  2. Individual flag alert per non-urgent flag newly triggered
 //     this week (i.e. true in this week's snapshot, false last week)
+//
+// NPS content (summary, repeat detractor watchlist, promoter-flip
+// flag) has been intentionally removed from this Slack output.
 //
 // Urgent flags (churn verbatim, billing balance) are handled
 // in sync.js on the day they fire — they do NOT appear here.
 // ============================================================
 
-import { getSnapshotRange, getNpsResponseRange, getAllAccounts } from '../lib/supabase.js';
-import { postWeeklyDigest, postFlagAlert }                       from '../lib/slack.js';
-import { WEEKLY_FLAGS, FLAG_LABELS }                              from '../lib/flags.js';
+import { getSnapshotRange, getAllAccounts } from '../lib/supabase.js';
+import { postWeeklyDigest, postFlagAlert }  from '../lib/slack.js';
+import { WEEKLY_FLAGS, FLAG_LABELS }        from '../lib/flags.js';
 
 const DASHBOARD_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -43,14 +46,10 @@ async function main() {
   // Fetch everything in parallel
   const [
     accounts,
-    thisWeekResponses,
-    prevWeekResponses,
     thisWeekSnaps,
     prevWeekSnaps,
   ] = await Promise.all([
     getAllAccounts(),
-    getNpsResponseRange(thisWeekStart, thisWeekEnd),
-    getNpsResponseRange(prevWeekStart, prevWeekEnd),
     getSnapshotRange(thisWeekStart, thisWeekEnd),
     getSnapshotRange(prevWeekStart, prevWeekEnd),
   ]);
@@ -58,38 +57,6 @@ async function main() {
   // Account lookup keyed by account_name (primary key)
   const accountMap = {};
   for (const a of accounts) accountMap[a.account_name] = a;
-
-  // ── NPS summary ───────────────────────────────────────────────
-  const thisDetractors = thisWeekResponses.filter(r => r.score <= 6);
-  const prevDetractors = prevWeekResponses.filter(r => r.score <= 6);
-  const avgScore = thisWeekResponses.length
-    ? Math.round(thisWeekResponses.reduce((s, r) => s + r.score, 0) / thisWeekResponses.length * 10) / 10
-    : null;
-
-  const CHURN_KW = ['cancel', 'leaving', 'switching', 'last month', 'no improvement'];
-  const verbatims = thisWeekResponses
-    .filter(r => r.verbatim && r.verbatim.trim())
-    .sort((a, b) => {
-      const aChurn = CHURN_KW.some(kw => (a.verbatim || '').toLowerCase().includes(kw));
-      const bChurn = CHURN_KW.some(kw => (b.verbatim || '').toLowerCase().includes(kw));
-      return bChurn - aChurn;
-    })
-    .map(r => r.verbatim);
-
-  // ── Repeat detractor watchlist ─────────────────────────────────
-  // Accounts with a detractor NPS score in BOTH this week and last week
-  const thisWeekDetractorNames = new Set(
-    thisWeekResponses.filter(r => r.score <= 6).map(r => r.account_name).filter(Boolean)
-  );
-  const prevWeekDetractorNames = new Set(
-    prevWeekResponses.filter(r => r.score <= 6).map(r => r.account_name).filter(Boolean)
-  );
-
-  const repeatDetractors = [...thisWeekDetractorNames]
-    .filter(name => prevWeekDetractorNames.has(name))
-    .map(name => accountMap[name])
-    .filter(Boolean)
-    .sort((a, b) => (b.arr || 0) - (a.arr || 0));
 
   // ── ARR at-risk movement ──────────────────────────────────────
   // "At-risk" = health_status red OR outstanding_balance > 0.
@@ -126,22 +93,8 @@ async function main() {
   const enteredArr = entered.reduce((s, a) => s + (a.arr || 0), 0);
   const exitedArr  = exited.reduce((s, a)  => s + (a.arr || 0), 0);
 
-  // ── 1. Post weekly NPS / ARR digest ──────────────────────────
+  // ── 1. Post weekly ARR at-risk digest ────────────────────────
   await postWeeklyDigest({
-    npsThisWeek: {
-      totalResponses: thisWeekResponses.length,
-      avgScore,
-      detractorCount: thisDetractors.length,
-      verbatims,
-    },
-    npsLastWeek: {
-      detractorCount: prevDetractors.length,
-    },
-    repeatDetractors: repeatDetractors.map(a => ({
-      account_name:    a.account_name,
-      account_manager: a.account_manager,
-      arr:             a.arr,
-    })),
     arrAtRiskEntered: entered.map(a => ({
       account_name:    a.account_name,
       account_manager: a.account_manager,
@@ -205,9 +158,6 @@ async function main() {
 
 function weeklyFlagNote(flagKey, acc) {
   switch (flagKey) {
-    case 'flag_promoter_flip':
-      return `NPS: ${acc.nps_prior_score ?? '?'} (promoter) → ${acc.nps_latest_score ?? '?'} (${acc.nps_latest_band ?? 'detractor'})`;
-
     case 'flag_zero_roi_new':
       return `${acc.perc_no_indeed || 0}% locs no Indeed apps, ${acc.perc_no_active_jobs || 0}% locs no active jobs`;
 

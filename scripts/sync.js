@@ -622,6 +622,9 @@ async function main() {
     flag_health_tier_drop:        acc.flag_health_tier_drop        || false,
     flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
     flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
+    flag_login_stale_14:          acc.flag_login_stale_14          || false,
+    flag_login_stale_30:          acc.flag_login_stale_30          || false,
+    flag_login_stale_90:          acc.flag_login_stale_90          || false,
     last_synced:                 acc.last_synced,
   })).filter(row => row.account_name);
   await upsertAccounts(accountRows);
@@ -658,6 +661,9 @@ async function main() {
     flag_health_tier_drop:        acc.flag_health_tier_drop        || false,
     flag_renewal_at_risk:         acc.flag_renewal_at_risk         || false,
     flag_zero_apps_established:   acc.flag_zero_apps_established   || false,
+    flag_login_stale_14:          acc.flag_login_stale_14          || false,
+    flag_login_stale_30:          acc.flag_login_stale_30          || false,
+    flag_login_stale_90:          acc.flag_login_stale_90          || false,
   })).filter(row => row.account_name); // only rows with a resolved account name
 
   await saveSnapshots(snapshotRows);
@@ -772,6 +778,15 @@ function flagMetricNote(flagKey, acc, yesterday) {
         ctx.push(`${acc.perc_locs_no_active_jobs}% locs no active jobs`);
       const ctxStr = ctx.length ? ` | ${ctx.join(', ')}` : '';
       return `${age} day-old account — 0 applications in last 30 days${ctxStr}`;
+    }
+
+    case 'flag_login_stale_14':
+    case 'flag_login_stale_30':
+    case 'flag_login_stale_90': {
+      const days = acc.pendo_last_active
+        ? Math.floor((Date.now() - new Date(acc.pendo_last_active).getTime()) / 86400000)
+        : '?';
+      return `No login in ${days} days (last active: ${acc.pendo_last_active || 'never'})`;
     }
 
     default:
