@@ -1016,10 +1016,14 @@
                 if (acc.health_status === 'red') tags.push('<span class="risk-pill">Low Health Score</span>');
                 if (acc.perc_locs_no_indeed > 0) tags.push(`<span class="risk-pill">${acc.perc_locs_no_indeed}% locs missing Indeed</span>`);
                 if (acc.nps_latest_band === 'detractor') tags.push('<span class="risk-pill orange">NPS Detractor</span>');
-                if (acc.flag_login_stale_90) tags.push('<span class="risk-pill">💤 No login 90+d</span>');
-                else if (acc.flag_login_stale_30) tags.push('<span class="risk-pill">💤 No login 30+d</span>');
-                else if (acc.flag_login_stale_14) tags.push('<span class="risk-pill">💤 No login 14+d</span>');
                 if (tags.length === 0) tags.push('<span class="status-badge green">Healthy</span>');
+                // Login recency — shown for every account (not just flagged ones); only the
+                // color/urgency reflects the 14/30/90-day staleness flags.
+                if (acc.pendo_last_active) {
+                    const loginDays = Math.ceil((new Date() - new Date(acc.pendo_last_active)) / 86400000);
+                    const loginSev  = acc.flag_login_stale_90 ? 'crit' : (acc.flag_login_stale_30 || acc.flag_login_stale_14) ? 'warn' : 'ok';
+                    tags.push(`<span class="activity-risk-badge ${loginSev}">💤 ${loginDays}d</span>`);
+                }
                 const arrColor = (acc.health_status === 'red' || acc.has_balance || acc.manual_escalation) ? '#b91c1c' : '#111827';
                 return `<tr class="clickable-row" data-account-id="${escapeAttr(acc.id)}">
                     <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
@@ -1324,11 +1328,13 @@
         }
         document.getElementById('accActivityRiskBadge').innerHTML = badgeHtml;
 
-        // Login staleness badge — no-login flags computed server-side (14/30/90 day thresholds)
+        // Login recency badge — shown for every account with Pendo data (0d is fine);
+        // only the color/urgency reflects the 14/30/90-day staleness flags.
         let loginStaleHtml = '';
-        if (data.flag_login_stale_90)      loginStaleHtml = `<span class="activity-risk-badge crit">💤 No Login 90+d</span>`;
-        else if (data.flag_login_stale_30) loginStaleHtml = `<span class="activity-risk-badge warn">💤 No Login 30+d</span>`;
-        else if (data.flag_login_stale_14) loginStaleHtml = `<span class="activity-risk-badge warn">💤 No Login 14+d</span>`;
+        if (pendoActivity !== null) {
+            const sev = data.flag_login_stale_90 ? 'crit' : (data.flag_login_stale_30 || data.flag_login_stale_14) ? 'warn' : 'ok';
+            loginStaleHtml = `<span class="activity-risk-badge ${sev}">💤 Last Login ${pendoActivity.days}d</span>`;
+        }
         document.getElementById('accLoginStaleBadge').innerHTML = loginStaleHtml;
 
         // NPS velocity badge
