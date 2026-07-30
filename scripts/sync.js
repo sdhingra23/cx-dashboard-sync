@@ -678,15 +678,20 @@ async function main() {
 
   // ── 10. Post Slack alerts (urgent flags only — any day) ───────
   // Non-urgent flags are batched and posted Monday by weekly-digest.js.
+  let urgentAlertCount = 0;
+  let urgentAlertFailures = 0;
   for (const { flagKey, label, acc, metric } of flagAlerts) {
     if (!URGENT_FLAGS.has(flagKey)) continue;   // non-urgent → Monday digest
     if (!acc.is_managed) continue;              // unmanaged accounts never get Slack alerts
     try {
       await postFlagAlert(flagKey, label, acc, metric, DASHBOARD_BASE);
+      urgentAlertCount++;
     } catch (e) {
+      urgentAlertFailures++;
       console.error(`Slack alert failed for ${flagKey} / ${acc.account_name}:`, e.message);
     }
   }
+  console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} posted to Slack (urgent + managed), ${urgentAlertFailures} failed`);
 
   // ── 11. Post Slack alerts for newly added escalation notes ───
   // Escalations are written to Supabase by the dashboard when an AM adds a note.
