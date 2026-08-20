@@ -48,6 +48,12 @@ create table if not exists public.locations (
   last_synced                 timestamptz not null default now()
 );
 
+-- RLS on, no policies: the sync and /api/locations both connect with the
+-- service-role key, which bypasses RLS, while the anon key gets nothing.
+-- `create table` leaves RLS off by default (unlike the Table Editor), so
+-- this line is what keeps the table unreadable from the browser.
+alter table public.locations enable row level security;
+
 -- The dashboard always reads locations filtered by account, and the sync
 -- prunes by last_synced — index both.
 create index if not exists locations_account_name_idx on public.locations (account_name);
