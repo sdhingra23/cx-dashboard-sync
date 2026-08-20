@@ -216,6 +216,12 @@ const METABASE_QUESTIONS = {
     },
   },
 
+  // /question/1515 — LinkedIn enabled (one row per account, 1 = enabled)
+  linkedin: {
+    id: 1515,
+    columns: ['account_id', 'account_name', 'linkedin_enabled'],
+  },
+
   // /question/1474 — Integrations + onboarding flag (one row per account)
   integrations: {
     id: 1474,
@@ -392,9 +398,10 @@ async function main() {
     'has_netchex', 'has_checkr', 'has_adp', 'has_7shifts',
     'has_chickfila', 'has_paychex', 'has_clearview', 'has_hr_alliance',
     'total_integrations', 'onboarding_enabled',
+    // LinkedIn (Q1515)
+    'linkedin_enabled',
     // ── Not yet available — add when Metabase questions exist ──
     // 'job_boost_enabled', 'job_boost_last_used_days',
-    // 'linkedin_enabled',
   ];
 
   const hangingMbAccounts = [];
@@ -532,6 +539,11 @@ async function main() {
       ? Math.round((Number(acc.no_tta_apps_loc_count) || 0) / ttaTotalLocs * 1000) / 10
       : null;
 
+    // linkedin_enabled arrives from Q1515 as 1/0, not a boolean — coerce it so
+    // the Supabase boolean column and the dashboard's checks agree. Accounts
+    // absent from Q1515 stay null ("unknown"), not false.
+    acc.linkedin_enabled = toBoolOrNull(acc.linkedin_enabled);
+
     // is_zero_roi: crossed 70% threshold on perc_locs_no_indeed OR perc_locs_no_active_jobs
     acc.is_zero_roi = (Number(acc.perc_locs_no_indeed) || 0) > 70
                    || (Number(acc.perc_locs_no_active_jobs) || 0) > 70;
@@ -649,6 +661,7 @@ async function main() {
     open_jobs_count:             acc.open_jobs_count             ?? null,
     applications_30d:            acc.applications_30d            ?? null,
     onboarding_enabled:          acc.onboarding_enabled          ?? null,
+    linkedin_enabled:            acc.linkedin_enabled            ?? null,
     has_netchex:                 acc.has_netchex                 ?? null,
     has_checkr:                  acc.has_checkr                  ?? null,
     has_adp:                     acc.has_adp                     ?? null,
@@ -797,6 +810,18 @@ async function main() {
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
   console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${locationCount} locations, ${snapshotRows.length} snapshots, ${flagAlerts.length} flag alerts, ${escalationAlertCount} escalation alerts in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
+}
+
+// ── Value coercion ────────────────────────────────────────────
+
+/** 1/0, "Yes"/"No", "true"/"false" → boolean. Unknown/absent → null. */
+function toBoolOrNull(val) {
+  if (val === null || val === undefined || val === '') return null;
+  if (typeof val === 'boolean') return val;
+  const s = String(val).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'enabled'].includes(s))   return true;
+  if (['0', 'false', 'no', 'n', 'disabled'].includes(s))  return false;
+  return null;
 }
 
 // ── Flag metric notes (human-readable trigger description) ────

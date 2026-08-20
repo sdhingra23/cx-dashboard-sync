@@ -1843,16 +1843,19 @@
         const onbStatus   = onbEnabled == null ? 'no-data' : onbEnabled ? 'active' : 'unused';
         const onbCoverage = onbEnabled == null ? '—' : onbEnabled ? '✓ Enabled' : '✕ Not enabled';
 
-        // ── LinkedIn: still no data source
-        const noDataRow = (label) =>
-            `<tr><td><strong>${label}</strong></td><td style="color:#9ca3af;">—</td><td>${featureBadge('no-data')}</td><td style="color:#9ca3af;font-style:italic;">Not connected to a data source</td></tr>`;
+        // ── LinkedIn: wired from Q1515. Null means the account wasn't in the
+        // question at all ("unknown"), which is not the same as "not enabled".
+        const liEnabled  = data.linkedin_enabled;
+        const liStatus   = liEnabled == null ? 'no-data' : liEnabled ? 'active' : 'unused';
+        const liCoverage = liEnabled == null ? '—' : liEnabled ? '✓ Enabled' : '✕ Not enabled';
+        const liDetail   = liEnabled == null ? 'No data for this account' : liEnabled ? 'Jobs syndicate to LinkedIn' : 'Not syndicating to LinkedIn';
 
         document.getElementById('featureTable').innerHTML =
             `<tr><td><strong>Text-to-Apply</strong></td><td>${ttaCoverage}</td><td>${featureBadge(ttaStatus)}</td><td>${ttaDetail}</td></tr>` +
             `<tr><td><strong>Job Boost</strong></td><td>${boostCoverage}</td><td>${featureBadge(boostStatus)}</td><td>${boostDetail}</td></tr>` +
             `<tr><td><strong>NextMatch AI</strong></td><td>${nmCoverage}</td><td>${featureBadge(nmStatus)}</td><td>${nmDetail}</td></tr>` +
             `<tr><td><strong>Onboarding</strong></td><td>${onbCoverage}</td><td>${featureBadge(onbStatus)}</td><td>—</td></tr>` +
-            noDataRow('LinkedIn');
+            `<tr><td><strong>LinkedIn</strong></td><td>${liCoverage}</td><td>${featureBadge(liStatus)}</td><td>${liDetail}</td></tr>`;
 
         // ── Integrations section
         const INTEGRATION_LABELS = {
