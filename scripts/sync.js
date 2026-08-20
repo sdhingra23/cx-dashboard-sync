@@ -17,9 +17,11 @@
 //  7. Upsert accounts to Supabase
 //  8. Save today's snapshot
 //  9. Upsert NPS responses
+// 10. Upsert location drill-down rows (one row per location)
 // ============================================================
 
-import { mbGetSession, buildMetabaseData }    from '../lib/metabase.js';
+import { mbGetSession, buildMetabaseData, mbRunQuestion } from '../lib/metabase.js';
+import { buildLocationRows, LOCATION_QUESTION_ID } from '../lib/locations.js';
 import { buildChargebeeData }                  from '../lib/chargebee.js';
 import { fetchNpsResponses, fetchAccountActivity } from '../lib/pendo.js';
 import { normalizeName }                       from '../lib/normalize.js';
@@ -36,6 +38,8 @@ import {
   deleteStaleAccounts,
   getRecentEscalations,
   getAllAccounts,
+  upsertLocations,
+  deleteStaleLocations,
 } from '../lib/supabase.js';
 
 // ── Metabase question config ──────────────────────────────────
@@ -228,7 +232,10 @@ const DASHBOARD_BASE = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
   : 'https://your-dashboard.vercel.app'; // fallback; set VERCEL_URL secret
 
-const TODAY = new Date().toISOString().split('T')[0];
+const TODAY     = new Date().toISOString().split('T')[0];
+// One timestamp for the whole run — deleteStaleLocations() prunes any row
+// whose last_synced is older, so every row this run writes must share it.
+const SYNCED_AT = new Date().toISOString();
 
 // ── Churn keyword check (for verbatim flag) ───────────────────
 const CHURN_KEYWORDS = ['cancel', 'leaving', 'switching', 'last month', 'no improvement'];
@@ -247,12 +254,21 @@ async function main() {
   }
 
   // ── 2. Fetch all sources in parallel ────────────────────────
-  const [mbMap, cbRows, npsResponses, pendoActivity, existingAccounts] = await Promise.all([
+  const [mbMap, rawLocationRows, cbRows, npsResponses, pendoActivity, existingAccounts] = await Promise.all([
     mbToken
       ? buildMetabaseData(METABASE_QUESTIONS, mbToken).catch(e => {
           console.error('Metabase buildData failed:', e.message); return {};
         })
       : Promise.resolve({}),
+
+    // Q1513 runs outside METABASE_QUESTIONS: it returns one row per location,
+    // and buildMetabaseData() would collapse those to one row per account.
+    // Rows are stored as-is in the `locations` table (step 10).
+    mbToken
+      ? mbRunQuestion(LOCATION_QUESTION_ID, mbToken).catch(e => {
+          console.error(`Metabase location drill-down (Q${LOCATION_QUESTION_ID}) failed:`, e.message); return [];
+        })
+      : Promise.resolve([]),
 
     buildChargebeeData(process.env.CHARGEBEE_API_KEY).catch(e => {
       console.error('Chargebee failed:', e.message); return [];
@@ -282,7 +298,25 @@ async function main() {
     }
   }
 
-  console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}`);
+  // Fallback for Pendo activity (esp. pendo_last_active) when today's fetch
+  // fails or omits an account (Pendo rate-limit/timeout, or the account
+  // just isn't in this run's response). Without this, a transient gap
+  // resets pendo_last_active to undefined for that account, daysSinceLogin
+  // computes as null, and flag_login_stale_14/30/90 falsely evaluate to
+  // false for the day — that false value gets written to the snapshot, so
+  // the next successful run sees the flag go false→true and re-fires the
+  // Slack alert as "newly triggered", even though the account's staleness
+  // never actually changed.
+  const existingPendoByName = {};
+  for (const row of existingAccounts) {
+    existingPendoByName[row.account_name] = {
+      pendo_last_active:             row.pendo_last_active             ?? null,
+      pendo_days_active_per_visitor: row.pendo_days_active_per_visitor ?? null,
+      pendo_error_click_rate:        row.pendo_error_click_rate       ?? null,
+    };
+  }
+
+  console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}, location rows: ${rawLocationRows.length}`);
 
   // ── 3. Merge into one map keyed by normalized account name ───
   //
@@ -449,6 +483,14 @@ async function main() {
     Object.assign(merged[name], activity);
   }
 
+  // Carry forward last known Pendo activity for any account today's fetch
+  // didn't cover — see existingPendoByName comment above for why.
+  for (const acc of Object.values(merged)) {
+    if (acc.pendo_last_active !== undefined) continue;
+    const prev = existingPendoByName[acc.account_name];
+    if (prev) Object.assign(acc, prev);
+  }
+
   // Load 7-days-ago snapshots for billing grace-period check.
   // Used below to compute billing_balance_effective per account.
   const sevenDaysAgoMap = await getSnapshotNDaysAgo(7).catch(e => {
@@ -480,6 +522,14 @@ async function main() {
       : null;
     acc.avg_time_to_contact_days = acc.avg_time_to_contact_hrs != null
       ? Math.round(acc.avg_time_to_contact_hrs / 24 * 10) / 10
+      : null;
+
+    // perc_locs_no_tta: share of locations with no Text-to-Apply applications.
+    // Q1329 is a filtered list — accounts absent from it simply have no row,
+    // which means "unknown", not "zero", so this stays null for them.
+    const ttaTotalLocs = Number(acc.total_locations) || 0;
+    acc.perc_locs_no_tta = (ttaTotalLocs > 0 && acc.no_tta_apps_loc_count != null)
+      ? Math.round((Number(acc.no_tta_apps_loc_count) || 0) / ttaTotalLocs * 1000) / 10
       : null;
 
     // is_zero_roi: crossed 70% threshold on perc_locs_no_indeed OR perc_locs_no_active_jobs
@@ -581,6 +631,8 @@ async function main() {
     perc_locs_no_active_jobs:    acc.perc_locs_no_active_jobs    ?? null,
     perc_jobs_no_perks:          acc.perc_jobs_no_perks          ?? null,
     perc_jobs_no_salaries:       acc.perc_jobs_no_salaries       ?? null,
+    no_tta_apps_loc_count:       acc.no_tta_apps_loc_count       ?? null,
+    perc_locs_no_tta:            acc.perc_locs_no_tta            ?? null,
     total_locations:             acc.total_locations             ?? null,
     active_locations:            acc.active_locations            ?? null,
     locs_no_active_jobs:         acc.locs_no_active_jobs         ?? null,
@@ -676,7 +728,31 @@ async function main() {
   }));
   await upsertNpsResponses(enrichedResponses);
 
-  // ── 10. Post Slack alerts (urgent flags only — any day) ───────
+  // ── 10. Upsert location drill-down rows ───────────────────────
+  // One row per location, powering the dashboard's Locations tab.
+  // Scoped to accounts already in `merged` — a location whose account isn't
+  // on the dashboard can never be reached from the UI.
+  let locationCount = 0;
+  try {
+    const knownNames = new Set(Object.keys(merged));
+    const { rows: locationRows, skippedNoId, skippedUnknownAccount } =
+      buildLocationRows(rawLocationRows, knownNames, SYNCED_AT);
+
+    if (skippedNoId > 0) {
+      console.warn(`Locations: skipped ${skippedNoId} row(s) with no location_id or account_name.`);
+    }
+    if (skippedUnknownAccount.length > 0) {
+      console.warn(`Locations: skipped rows for ${skippedUnknownAccount.length} account(s) not on the dashboard — ${skippedUnknownAccount.slice(0, 10).join(', ')}${skippedUnknownAccount.length > 10 ? ', …' : ''}`);
+    }
+
+    await upsertLocations(locationRows);
+    locationCount = locationRows.length;
+    await deleteStaleLocations(SYNCED_AT, locationRows.length);
+  } catch (e) {
+    console.error('Location drill-down sync failed (non-fatal):', e.message);
+  }
+
+  // ── 11. Post Slack alerts (urgent flags only — any day) ───────
   // Non-urgent flags are batched and posted Monday by weekly-digest.js.
   let urgentAlertCount = 0;
   let urgentAlertFailures = 0;
@@ -693,7 +769,7 @@ async function main() {
   }
   console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} posted to Slack (urgent + managed), ${urgentAlertFailures} failed`);
 
-  // ── 11. Post Slack alerts for newly added escalation notes ───
+  // ── 12. Post Slack alerts for newly added escalation notes ───
   // Escalations are written to Supabase by the dashboard when an AM adds a note.
   // We detect ones created in the last 24h and post to Slack here.
   // Note: for real-time alerts consider a Supabase Database Webhook → SLACK_WEBHOOK_URL.
@@ -720,7 +796,7 @@ async function main() {
   }
 
   const elapsed = ((Date.now() - startMs) / 1000).toFixed(1);
-  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${snapshotRows.length} snapshots, ${flagAlerts.length} flag alerts, ${escalationAlertCount} escalation alerts in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
+  console.log(`=== Daily Sync END — ${accountRows.length} accounts, ${locationCount} locations, ${snapshotRows.length} snapshots, ${flagAlerts.length} flag alerts, ${escalationAlertCount} escalation alerts in ${elapsed}s${hangingMbAccounts.length ? `, ${hangingMbAccounts.length} hanging MB accounts` : ''} ===`);
 }
 
 // ── Flag metric notes (human-readable trigger description) ────

@@ -339,6 +339,96 @@
         /* score label */
         .score-label { font-size:11px; color:var(--subtle); text-align:center; margin-top:6px; }
 
+        /* ── LOCATION DRILL-DOWN ──────────────────────────────────── */
+        .loc-tiles { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-bottom:22px; }
+        .loc-tile { border-radius:var(--r-sm); padding:14px 12px; border:1px solid var(--border); background:var(--surface-2); }
+        .loc-tile-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:8px; }
+        .loc-tile-value { font-family:var(--mono); font-size:26px; font-weight:600; letter-spacing:-.03em; line-height:1; color:var(--text); }
+        .loc-tile-sub   { font-size:11px; margin-top:6px; font-weight:500; color:var(--subtle); }
+        .loc-tile.good { background:var(--green-bg); border-color:var(--green-border); }
+        .loc-tile.good .loc-tile-label, .loc-tile.good .loc-tile-sub { color:var(--green-text); }
+        .loc-tile.good .loc-tile-value { color:var(--green); }
+        .loc-tile.warn { background:var(--amber-bg); border-color:var(--amber-border); }
+        .loc-tile.warn .loc-tile-label, .loc-tile.warn .loc-tile-sub { color:var(--amber-text); }
+        .loc-tile.warn .loc-tile-value { color:var(--amber); }
+        .loc-tile.crit { background:var(--red-bg); border-color:var(--red-border); }
+        .loc-tile.crit .loc-tile-label, .loc-tile.crit .loc-tile-sub { color:var(--red-text); }
+        .loc-tile.crit .loc-tile-value { color:var(--red); }
+
+        .loc-chart-grid { display:grid; grid-template-columns:1.7fr 1fr; gap:16px; margin-bottom:22px; }
+        /* Chart.js sizes its canvas from the container's current width; without
+           min-width:0 the grid track can't shrink back below that width and the
+           page picks up a horizontal scrollbar on narrow viewports. */
+        .loc-chart-grid > *, .loc-tiles > * { min-width:0; }
+        .loc-chart-box  { border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; background:var(--surface); }
+        .loc-chart-title { font-size:12px; font-weight:600; color:var(--text); }
+        .loc-chart-note  { font-size:11px; color:var(--subtle); margin:2px 0 12px; }
+
+        .loc-pill { display:inline-block; padding:2px 7px; border-radius:3px; font-size:10px; font-weight:600; margin:1px 2px 1px 0; white-space:nowrap; }
+        .loc-pill.crit { background:var(--red-bg);   color:var(--red-text); }
+        .loc-pill.warn { background:var(--amber-bg); color:var(--amber-text); }
+        .loc-pill.ok   { background:var(--green-bg); color:var(--green-text); }
+
+        .loc-tile.clickable { cursor:pointer; transition:box-shadow .15s, transform .15s; }
+        .loc-tile.clickable:hover { box-shadow:var(--shadow); }
+        .loc-tile.selected { outline:2px solid var(--ink); outline-offset:-2px; }
+
+        /* Headline numbers that stay readable no matter how many locations
+           an account has — the per-location charts don't. */
+        .loc-insight { background:var(--ink-bg); border:1px solid var(--border); border-radius:var(--r);
+                       padding:12px 16px; margin-bottom:22px; font-size:12px; color:var(--muted);
+                       display:flex; gap:22px; flex-wrap:wrap; align-items:center; }
+        .loc-insight strong { color:var(--text); font-family:var(--mono); font-weight:600; }
+
+        .loc-chips { display:flex; gap:6px; flex-wrap:wrap; }
+        .loc-chip { padding:5px 11px; border-radius:999px; border:1px solid var(--border); background:var(--surface);
+                    font-size:12px; font-weight:600; color:var(--muted); cursor:pointer; font-family:var(--sans); }
+        .loc-chip:hover { border-color:var(--ink); color:var(--text); }
+        .loc-chip.active { background:var(--ink); border-color:var(--ink); color:#fff; }
+        .loc-chip-count { opacity:.6; margin-left:5px; font-family:var(--mono); }
+
+        /* ── AM USAGE FILTERS ─────────────────────────────────────── */
+        .ufp { border:1px solid var(--border); border-radius:var(--r); background:var(--surface-2); padding:14px 16px; margin-bottom:14px; }
+        .ufp-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+        .ufp-head span { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+        .ufp-reset { font-size:12px; font-weight:600; color:var(--muted); background:var(--surface);
+                     border:1px solid var(--border); border-radius:var(--r-sm); padding:4px 10px; }
+        .ufp-reset:hover { color:var(--text); border-color:var(--ink); }
+        .ufp-sliders { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 20px; margin-top:14px;
+                       padding-top:14px; border-top:1px solid var(--border); }
+        .ufp-slider-label { display:flex; justify-content:space-between; align-items:baseline; font-size:11px; color:var(--muted); margin-bottom:5px; }
+        .ufp-slider-label b { font-family:var(--mono); font-size:12px; color:var(--text); font-weight:600; }
+        .ufp-slider-label b.off { color:var(--subtle); font-weight:500; }
+        .ufp input[type=range] { width:100%; height:4px; accent-color:var(--ink); cursor:pointer; }
+        .ufp-summary { font-size:12px; color:var(--muted); margin:0 0 12px; }
+        .ufp-summary strong { color:var(--text); font-family:var(--mono); font-weight:600; }
+        @media (max-width:1100px) { .ufp-sliders { grid-template-columns:repeat(2,1fr); } }
+
+        .loc-pager { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 2px 0; font-size:12px; color:var(--muted); }
+        .loc-pager button { padding:5px 12px; border:1px solid var(--border); background:var(--surface);
+                            border-radius:var(--r-sm); font-weight:600; color:var(--text); }
+        .loc-pager button:disabled { opacity:.4; cursor:not-allowed; }
+
+        .loc-group-row { cursor:pointer; background:var(--surface-2); }
+        .loc-group-row:hover { background:var(--border-light); }
+        .loc-group-row td { font-weight:600; }
+        .loc-caret { display:inline-block; width:14px; color:var(--subtle); }
+        .loc-child td:first-child { padding-left:34px; color:var(--muted); }
+
+        .loc-table-wrap { max-height:540px; overflow:auto; border:1px solid var(--border); border-radius:var(--r); }
+        .loc-table-wrap .data-table th { position:sticky; top:0; z-index:2; }
+        .loc-num { font-family:var(--mono); font-size:12px; text-align:right; }
+        .loc-num.zero { color:var(--subtle); }
+        th.sortable { cursor:pointer; user-select:none; }
+        th.sortable:hover { color:var(--text); }
+        .loc-section-title { margin:26px 0 12px; color:var(--text); font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; }
+        .loc-empty { padding:36px 20px; text-align:center; color:var(--muted); background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r); }
+
+        @media (max-width:1100px) {
+            .loc-chart-grid { grid-template-columns:1fr; }
+            .loc-tiles      { grid-template-columns:repeat(2,1fr); }
+        }
+
         /* loading */
         #loadingState { text-align:center; padding:100px 20px; color:var(--muted); }
         #loadingState h3 { color:var(--text); margin-bottom:8px; font-weight:500; font-size:16px; }
@@ -580,6 +670,7 @@
                     <button class="tab-button active" onclick="switchPortTab(0)">📂 All Accounts</button>
                     <button class="tab-button" onclick="switchPortTab(1)">🚨 Firefighting</button>
                     <button class="tab-button" onclick="switchPortTab(2)">💡 Product Opportunities</button>
+                    <button class="tab-button" onclick="switchPortTab(3)">📍 Location Drill-Down</button>
                 </div>
                 <div class="tab-content active" id="portTab0">
                     <div class="search-container">
@@ -589,18 +680,83 @@
                             <button id="amClearFilter" class="clear-filter-btn hidden" style="border:none;margin-left:8px;" onclick="filterAMTable('all')">✕ Clear Filter</button>
                         </div>
                     </div>
+
+                    <div class="ufp">
+                        <div class="ufp-head">
+                            <span>Usage filters</span>
+                            <button class="ufp-reset" onclick="resetAmUsageFilters()">Reset</button>
+                        </div>
+                        <div class="loc-chips" id="amPresetChips"></div>
+                        <div class="ufp-sliders" id="amSliders"></div>
+                    </div>
+                    <p class="ufp-summary" id="amFilterSummary"></p>
+
                     <table class="data-table">
                         <thead><tr>
                             <th class="sortable" onclick="sortAM('account_name')" id="th_account_name">Account Name ↕</th>
                             <th class="sortable" onclick="sortAM('health_score')" id="th_health_score">Health Score ↕</th>
                             <th class="sortable" onclick="sortAM('health_status')" id="th_health_status">Status ↕</th>
                             <th class="sortable" onclick="sortAM('arr')" id="th_arr">ARR ↕</th>
+                            <th class="sortable" onclick="sortAM('applications_30d')" id="th_applications_30d" style="text-align:right;">Apps 30d ↕</th>
+                            <th>Usage Gaps</th>
                         </tr></thead>
                         <tbody id="amTableBody"></tbody>
                     </table>
                 </div>
                 <div class="tab-content" id="portTab1"><div id="firefightingList"></div></div>
                 <div class="tab-content" id="portTab2"><div id="opportunityList"></div></div>
+
+                <!-- TAB 3: Location Drill-Down (portfolio-wide) -->
+                <div class="tab-content" id="portTab3">
+                    <div id="amLocStatus" class="loc-empty">Loading location data…</div>
+                    <div id="amLocContent" class="hidden">
+                        <div class="loc-tiles" id="amLocTiles"></div>
+
+                        <div class="loc-chart-grid">
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title">Dormant locations by account</div>
+                                <div class="loc-chart-note">Locations with no published job, top 10 accounts</div>
+                                <div id="amLocDormantWrap" style="height:300px;"><canvas id="amLocDormantChart"></canvas></div>
+                            </div>
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title">Portfolio location mix</div>
+                                <div class="loc-chart-note">Every location in your book, last 30 days</div>
+                                <div style="height:300px;"><canvas id="amLocMixChart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <div class="loc-section-title">Locations by account</div>
+                        <div class="loc-table-wrap">
+                            <table class="data-table">
+                                <thead><tr>
+                                    <th class="sortable" onclick="sortAmLoc('account_name')" id="thAmLoc_account_name">Account ↕</th>
+                                    <th class="sortable" onclick="sortAmLoc('total')"       id="thAmLoc_total"       style="text-align:right;">Locations ↕</th>
+                                    <th class="sortable" onclick="sortAmLoc('dormant')"     id="thAmLoc_dormant"     style="text-align:right;">No Jobs ↕</th>
+                                    <th class="sortable" onclick="sortAmLoc('noApps')"      id="thAmLoc_noApps"      style="text-align:right;">No Apps 30d ↕</th>
+                                    <th class="sortable" onclick="sortAmLoc('noBoost')"     id="thAmLoc_noBoost"     style="text-align:right;">No Boost 30d ↕</th>
+                                    <th class="sortable" onclick="sortAmLoc('apps')"        id="thAmLoc_apps"        style="text-align:right;">Apps 30d ↕</th>
+                                    <th style="width:150px;">Active coverage</th>
+                                </tr></thead>
+                                <tbody id="amLocTableBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="loc-section-title">Locations needing attention</div>
+                        <p id="amLocProblemNote" style="font-size:12px;color:var(--muted);margin:-6px 0 12px;">No published job or zero applications in the last 30 days — highest-ARR accounts first.</p>
+                        <div class="loc-table-wrap" style="max-height:420px;">
+                            <table class="data-table">
+                                <thead><tr>
+                                    <th>Account</th><th>Location</th>
+                                    <th style="text-align:right;">Jobs</th>
+                                    <th style="text-align:right;">Apps 30d</th>
+                                    <th>Issues</th>
+                                </tr></thead>
+                                <tbody id="amLocProblemBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="loc-pager" id="amLocPager"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -673,6 +829,7 @@
                     <button class="tab-button active" onclick="switchAccTab(0)">📈 ROI &amp; Outcomes</button>
                     <button class="tab-button" onclick="switchAccTab(1)">⚙️ Platform Health</button>
                     <button class="tab-button" onclick="switchAccTab(2)">🤝 Relationship</button>
+                    <button class="tab-button" onclick="switchAccTab(3)">📍 Locations</button>
                 </div>
 
                 <!-- TAB 0: ROI & Outcomes -->
@@ -773,6 +930,72 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- TAB 3: Locations -->
+                <div class="tab-content" id="accTab3">
+                    <div id="accLocStatus" class="loc-empty">Loading location data…</div>
+                    <div id="accLocContent" class="hidden">
+                        <div class="loc-tiles" id="accLocTiles"></div>
+                        <div id="accLocInsight" class="loc-insight hidden"></div>
+
+                        <div class="loc-chart-grid">
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title" id="accLocAppsTitle">Applications per location</div>
+                                <div class="loc-chart-note" id="accLocAppsNote">Last 30 days</div>
+                                <div id="accLocAppsWrap" style="height:300px;"><canvas id="accLocAppsChart"></canvas></div>
+                            </div>
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title">Location mix</div>
+                                <div class="loc-chart-note">Where each location stands right now</div>
+                                <div style="height:300px;"><canvas id="accLocMixChart"></canvas></div>
+                            </div>
+                        </div>
+
+                        <div class="loc-chart-grid" style="grid-template-columns:1fr 1fr;">
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title">Candidate messaging</div>
+                                <div class="loc-chart-note">Locations grouped by how their team answers candidate chats, last 30 days</div>
+                                <div style="height:120px;"><canvas id="accLocChatChart"></canvas></div>
+                                <div id="accLocChatNote" style="font-size:11px;color:var(--subtle);margin-top:8px;"></div>
+                            </div>
+                            <div class="loc-chart-box">
+                                <div class="loc-chart-title">Feature coverage</div>
+                                <div class="loc-chart-note">Share of this account's locations using each capability</div>
+                                <div id="accLocCoverage" style="margin-top:4px;"></div>
+                            </div>
+                        </div>
+
+                        <div class="loc-section-title" style="margin-top:6px;">Location detail</div>
+                        <div class="search-container" style="align-items:flex-start;">
+                            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                                <input type="text" id="locSearch" class="search-input" style="width:240px;" placeholder="🔍 Search locations..." oninput="locResetPage(); renderAccLocTable()">
+                                <div class="loc-chips" id="locFilterChips"></div>
+                            </div>
+                            <div style="display:flex;gap:10px;align-items:center;flex-shrink:0;">
+                                <div class="loc-chips" id="locGroupToggle"></div>
+                                <span id="locCount" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+                            </div>
+                        </div>
+
+                        <div class="loc-table-wrap">
+                            <table class="data-table">
+                                <thead><tr>
+                                    <th class="sortable" onclick="sortAccLoc('name')"                     id="thLoc_name">Location ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('published_jobs')"           id="thLoc_published_jobs"           style="text-align:right;">Jobs ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('total_apps_30d')"           id="thLoc_total_apps_30d"           style="text-align:right;">Apps 30d ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('indeed_apps_30d')"          id="thLoc_indeed_apps_30d"          style="text-align:right;">Indeed ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('signage_apps_30d')"         id="thLoc_signage_apps_30d"         style="text-align:right;">Signage ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('boosts_30d')"               id="thLoc_boosts_30d"               style="text-align:right;">Boosts ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('screenings_completed_30d')" id="thLoc_screenings_completed_30d" style="text-align:right;">Screenings ↕</th>
+                                    <th class="sortable" onclick="sortAccLoc('total_chats_30d')"          id="thLoc_total_chats_30d"          style="text-align:right;">Chats ↕</th>
+                                    <th>Status</th>
+                                </tr></thead>
+                                <tbody id="locTableBody"></tbody>
+                            </table>
+                        </div>
+                        <div class="loc-pager" id="locPager"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -795,6 +1018,7 @@
     let brandDonutChartInstance = null;
     let amDonutChartInstance = null;
     let accGaugeChartInstance = null;
+    let currentAccountId = null;   // account_name behind the account detail view
 
     // ===================== DATA FETCH =====================
     function initApp() {
@@ -1140,6 +1364,9 @@
         document.getElementById('pageTitle').innerText = `📊 ${aeName}'s Portfolio`;
         document.getElementById('accountSearch').value = '';
         document.getElementById('arrSearch').value = '';
+        currentAmName = aeName;
+        amPreset = 'all';
+        AM_SLIDERS.forEach(sl => { amSliderVals[sl.key] = amSliderOff(sl); });
         switchPortTab(0);
 
         currentAEAccounts = getAccountsArray().filter(a => a.ae === aeName);
@@ -1195,6 +1422,119 @@
             }).join('');
     }
 
+    // ── AM usage filters ──────────────────────────────────────
+    // Lets an AM slice their book by how accounts are actually using the
+    // product — "who is 60%+ dark on Indeed", "who has no Text-to-Apply" —
+    // rather than only by health score and ARR.
+    //
+    // Presets are one-click combinations; sliders refine them. Both are ANDed
+    // with the search box, the min-ARR box and the KPI-card filter above.
+
+    // Share of locations with no Text-to-Apply applications. Q1329 is a
+    // filtered list, so an account missing from it means "unknown", not zero —
+    // hence null rather than 0, and null rows drop out once the filter is on.
+    function accTtaGapPct(a) {
+        if (a.perc_locs_no_tta != null) return Number(a.perc_locs_no_tta);
+        const total = Number(a.total_locations) || 0;
+        const noTta = a.no_tta_apps_loc_count;
+        if (!total || noTta == null) return null;
+        return Math.round((Number(noTta) / total) * 1000) / 10;
+    }
+
+    function accDaysSinceLogin(a) {
+        if (!a.pendo_last_active) return null;
+        const d = new Date(a.pendo_last_active);
+        return isNaN(d) ? null : Math.floor((Date.now() - d.getTime()) / 86400000);
+    }
+
+    const AM_SLIDERS = [
+        { key: 'noIndeed',  label: 'Locs with no Indeed apps',  get: a => a.perc_locs_no_indeed,      dir: 'gte', max: 100, unit: '%' },
+        { key: 'noJobs',    label: 'Locs with no active jobs',  get: a => a.perc_locs_no_active_jobs, dir: 'gte', max: 100, unit: '%' },
+        { key: 'noBoost',   label: 'Locs not boosting',         get: a => a.perc_locs_no_job_boosts,  dir: 'gte', max: 100, unit: '%' },
+        { key: 'noTta',     label: 'Locs with no Text-to-Apply', get: accTtaGapPct,                   dir: 'gte', max: 100, unit: '%' },
+        { key: 'noSalary',  label: 'Jobs with no salary',       dir: 'gte', get: a => a.perc_jobs_no_salaries, max: 100, unit: '%' },
+        { key: 'health',    label: 'Health score at most',      get: a => a.health_score,             dir: 'lte', max: 100, unit: '' },
+    ];
+    // A 'gte' slider is off at 0 (matches everything); a 'lte' slider is off at its max.
+    const amSliderOff = sl => sl.dir === 'gte' ? 0 : sl.max;
+
+    const AM_PRESETS = {
+        all:        { label: 'All accounts',    test: () => true },
+        zeroroi:    { label: '⚡ Zero-ROI',      test: isZeroRoi },
+        lowusage:   { label: '📉 Low usage',     test: a => (a.perc_locs_no_indeed || 0) > 50 || (a.perc_locs_no_active_jobs || 0) > 50 || (a.perc_locs_no_job_boosts || 0) > 50 },
+        notta:      { label: '📵 No Text-to-Apply', test: a => { const v = accTtaGapPct(a); return v != null && v >= 100; } },
+        noapps:     { label: '🚫 No apps 30d',   test: a => Number(a.applications_30d) === 0 },
+        stale:      { label: '💤 No login 30d+', test: a => { const d = accDaysSinceLogin(a); return d != null && d >= 30; } },
+        detractors: { label: '😞 Detractors',    test: a => a.nps_latest_band === 'detractor' },
+        champions:  { label: '⭐ Champions',     test: a => (a.health_score || 0) >= 75
+                                                          && Number(a.applications_30d) > 0
+                                                          && a.nps_latest_band !== 'detractor'
+                                                          && !isZeroRoi(a) },
+    };
+
+    let amPreset     = 'all';
+    let amSliderVals = {};
+    AM_SLIDERS.forEach(sl => { amSliderVals[sl.key] = amSliderOff(sl); });
+
+    function renderAmFilterControls() {
+        document.getElementById('amPresetChips').innerHTML = Object.entries(AM_PRESETS).map(([key, p]) => {
+            const n = currentAEAccounts.filter(p.test).length;
+            return `<button class="loc-chip${amPreset === key ? ' active' : ''}" onclick="setAmPreset('${key}')">${p.label}<span class="loc-chip-count">${n}</span></button>`;
+        }).join('');
+
+        document.getElementById('amSliders').innerHTML = AM_SLIDERS.map(sl => {
+            const v   = amSliderVals[sl.key];
+            const off = v === amSliderOff(sl);
+            const shown = off ? 'any' : `${sl.dir === 'gte' ? '≥' : '≤'} ${v}${sl.unit}`;
+            return `<div>
+                <div class="ufp-slider-label"><span>${sl.label}</span><b class="${off ? 'off' : ''}">${shown}</b></div>
+                <input type="range" min="0" max="${sl.max}" step="5" value="${v}" oninput="setAmSlider('${sl.key}', this.value)">
+            </div>`;
+        }).join('');
+    }
+
+    function setAmPreset(key) { amPreset = key; renderAMTable(); }
+
+    function setAmSlider(key, value) {
+        amSliderVals[key] = Number(value);
+        renderAMTable();
+    }
+
+    function resetAmUsageFilters() {
+        amPreset = 'all';
+        AM_SLIDERS.forEach(sl => { amSliderVals[sl.key] = amSliderOff(sl); });
+        renderAMTable();
+    }
+
+    /** True when the account clears every active slider. */
+    function amPassesSliders(acc) {
+        for (const sl of AM_SLIDERS) {
+            const threshold = amSliderVals[sl.key];
+            if (threshold === amSliderOff(sl)) continue;   // slider is off
+            const raw = sl.get(acc);
+            if (raw == null) return false;                 // no data → can't confirm a match
+            const v = Number(raw);
+            if (sl.dir === 'gte' ? v < threshold : v > threshold) return false;
+        }
+        return true;
+    }
+
+    function amUsageGapPills(acc) {
+        const pills = [];
+        const add = (val, label, critAt = 50) => {
+            const v = Number(val);
+            if (!isFinite(v) || v <= 0) return;
+            pills.push(`<span class="loc-pill ${v >= critAt ? 'crit' : 'warn'}">${Math.round(v)}% ${label}</span>`);
+        };
+        add(acc.perc_locs_no_indeed,      'no Indeed');
+        add(acc.perc_locs_no_active_jobs, 'no jobs');
+        add(acc.perc_locs_no_job_boosts,  'no boost');
+        add(accTtaGapPct(acc),            'no TTA');
+        add(acc.perc_jobs_no_salaries,    'no salary');
+        if (pills.length === 0) pills.push('<span class="loc-pill ok">No gaps</span>');
+        return pills.slice(0, 4).join('');
+    }
+
     function filterAMTable(filterType) {
         currentAMFilter = filterType;
         document.querySelectorAll('.am-card').forEach(c => c.classList.remove('active-card'));
@@ -1210,7 +1550,7 @@
 
     function sortAM(column) {
         if (sortColumn === column) sortAscending = !sortAscending; else { sortColumn = column; sortAscending = true; }
-        ['account_name','health_score','health_status','arr'].forEach(h => {
+        ['account_name','health_score','health_status','arr','applications_30d'].forEach(h => {
             const el = document.getElementById('th_' + h);
             const text = el.innerText.replace(/ [↕↑↓]/, '');
             el.innerText = text + (h === sortColumn ? (sortAscending ? ' ↑' : ' ↓') : ' ↕');
@@ -1221,14 +1561,20 @@
     function renderAMTable() {
         const search = (document.getElementById('accountSearch').value || '').toLowerCase();
         const minArr = parseFloat(document.getElementById('arrSearch').value) || 0;
+        const presetTest = AM_PRESETS[amPreset].test;
         let filtered = currentAEAccounts.filter(acc => {
             const nameMatch = String(acc.account_name||'').toLowerCase().includes(search);
             const arrMatch  = (acc.arr||0) >= minArr;
             let cardMatch = true;
             if (currentAMFilter === 'zero_roi') cardMatch = isZeroRoi(acc);
             else if (currentAMFilter === 'disconnects') cardMatch = acc.health_status !== 'red' && acc.nps_score != null && acc.nps_score < 6;
-            return nameMatch && arrMatch && cardMatch;
+            return nameMatch && arrMatch && cardMatch && presetTest(acc) && amPassesSliders(acc);
         });
+
+        renderAmFilterControls();
+        const matchedArr = filtered.reduce((sum, a) => sum + (a.arr || 0), 0);
+        document.getElementById('amFilterSummary').innerHTML =
+            `<strong>${filtered.length}</strong> of <strong>${currentAEAccounts.length}</strong> accounts match · <strong>${formatMoney(matchedArr)}</strong> ARR`;
         filtered.sort((a,b) => {
             let va = a[sortColumn], vb = b[sortColumn];
             if (sortColumn === 'health_status') { va = a.health_score; vb = b.health_score; }
@@ -1239,14 +1585,17 @@
             return 0;
         });
         const tbody = document.getElementById('amTableBody');
-        if (filtered.length === 0) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:24px;">No accounts match these filters.</td></tr>'; return; }
+        if (filtered.length === 0) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;">No accounts match these filters.</td></tr>'; return; }
         tbody.innerHTML = filtered.map(acc => {
             const fc = acc.health_score < 40 ? 'fill-red' : acc.health_score < 70 ? 'fill-amber' : 'fill-green';
+            const apps = acc.applications_30d;
             return `<tr class="clickable-row" data-account-id="${escapeAttr(acc.id)}">
                 <td style="font-weight:700;color:#1e40af;">${acc.account_name}</td>
                 <td><div class="health-bar-container"><span style="font-weight:700;width:24px;">${acc.health_score}</span><div class="health-bar-bg"><div class="health-bar-fill ${fc}" style="width:${acc.health_score}%"></div></div></div></td>
                 <td><span class="status-badge ${acc.health_status}">${(acc.health_status||'unknown').toUpperCase()}</span></td>
                 <td style="font-weight:700;">${new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(acc.arr)}</td>
+                <td class="loc-num${Number(apps) === 0 ? ' zero' : ''}">${apps ?? '—'}</td>
+                <td>${amUsageGapPills(acc)}</td>
             </tr>`;
         }).join('');
     }
@@ -1254,6 +1603,7 @@
     function switchPortTab(index) {
         document.querySelectorAll('#amPortfolio .tab-button').forEach((b,i) => b.classList.toggle('active', i===index));
         document.querySelectorAll('#amPortfolio .tab-content').forEach((c,i) => c.classList.toggle('active', i===index));
+        if (index === 3) ensureAmLocations();
     }
 
     // ===================== ACCOUNT DETAIL =====================
@@ -1273,6 +1623,9 @@
     function switchAccTab(index) {
         document.querySelectorAll('#dashboardContent .tab-button').forEach((b,i) => b.classList.toggle('active', i===index));
         document.querySelectorAll('#dashboardContent .tab-content').forEach((c,i) => c.classList.toggle('active', i===index));
+        // Locations are fetched on demand — Chart.js also needs the tab visible
+        // to size its canvases, so render only once the tab is active.
+        if (index === 3) ensureAccountLocations();
     }
 
     function loadAccount() {
@@ -1280,6 +1633,16 @@
         if (!accountId) { navigateBack(); return; }
         const data = allAccounts[accountId];
         if (!data) return;
+
+        // Locations load lazily per account; reset the tab's filters so the
+        // previous account's search/sort doesn't carry over.
+        currentAccountId = accountId;
+        currentLocations = [];
+        document.getElementById('locSearch').value = '';
+        locSort     = { col: 'total_apps_30d', asc: false };
+        locFilter   = 'all';
+        locPage     = 1;
+        locExpanded = new Set();
 
         hideAllViews();
         document.getElementById('dashboardContent').classList.remove('hidden');
@@ -1368,7 +1731,7 @@
         document.getElementById('criticalMetrics').innerHTML = `
             <div class="stat-card"><div class="stat-label">Billing Status</div><div class="stat-value ${data.has_balance?'critical':'good'}">${data.has_balance?'$'+(data.outstanding_balance||0).toLocaleString():'$0'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.has_balance?'past due balance':'no outstanding balance'}</div></div>
             <div class="stat-card"><div class="stat-label">Hire Rate</div><div class="stat-value ${hireRateColor}">${hireRate!==null?hireRate+'%':'—'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.total_hired??0} hires / ${data.total_interviews??0} interviews</div></div>
-            <div class="stat-card"><div class="stat-label">Active Locations</div><div class="stat-value ${locColor}">${activeLocs}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">of ${totalLocs} total${locRatio!==null?' ('+locRatio+'%)':''}</div></div>
+            <div class="stat-card" onclick="switchAccTab(3)" style="cursor:pointer;" title="View location-level drill-down"><div class="stat-label">Active Locations</div><div class="stat-value ${locColor}">${activeLocs}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">of ${totalLocs} total${locRatio!==null?' ('+locRatio+'%)':''} <span style="color:#2563eb;font-weight:600;">· drill down →</span></div></div>
             <div class="stat-card"><div class="stat-label">Applications (30d)</div><div class="stat-value ${apps30dColor}">${apps30d}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${typeof openJobs==='number'?openJobs:'--'} jobs open now</div></div>`;
 
         // --- NPS Panel ---
@@ -1547,6 +1910,755 @@
             actRow('Last NPS Response',      daysSince(data.nps_latest_response_date)) +
             actRow('Last NextMatch Use',     daysSince(data.nextmatch_last_used)) +
             actRow('Data Last Synced',       daysSince(data.last_synced));
+    }
+
+    // ===================== LOCATION DRILL-DOWN =====================
+    // Location rows come from /api/locations (Metabase Q1513, one row per
+    // location) rather than the /api/dashboard payload — a full portfolio is
+    // tens of thousands of rows, so they're fetched per account (or per AM)
+    // the first time the Locations tab is opened, then cached for the session.
+    //
+    // Everything here has to stay readable for a 3-location coffee shop AND a
+    // 400-location franchise group, so per-location charts are only drawn for
+    // small accounts. Above that threshold the same data is shown as
+    // distributions, cohorts and coverage rates, with the per-location detail
+    // living in a grouped, paginated table underneath.
+
+    const LOC_SMALL_ACCOUNT = 20;   // max locations for per-location bar charts
+    const LOC_GROUP_MIN     = 25;   // locations above which we group by company by default
+    const LOC_PAGE_SIZE     = 50;   // table rows per page (top-level rows when grouped)
+
+    const LOC_COLORS = {
+        indeed:   '#2563eb',
+        signage:  '#0ea5e9',
+        active:   '#059669',
+        idle:     '#d97706',
+        dormant:  '#dc2626',
+        neutral:  '#cbd5e1',
+        partial:  '#f59e0b',
+    };
+
+    const locationCache = { account: {}, am: {} };
+    const locCharts = { accApps: null, accMix: null, accChat: null, amDormant: null, amMix: null };
+
+    let currentLocations   = [];      // rows behind the account Locations tab
+    let currentAmLocData   = null;    // { totals, rollup, problems } from the AM endpoint
+    let currentAmName      = null;
+    let locSort    = { col: 'total_apps_30d', asc: false };
+    let amLocSort  = { col: 'dormant',        asc: false };
+    let locFilter  = 'all';
+    let locGrouped = false;
+    let locPage    = 1;
+    let amLocPage  = 1;
+    let locExpanded = new Set();
+
+    function destroyLocChart(key) {
+        if (locCharts[key]) { locCharts[key].destroy(); locCharts[key] = null; }
+    }
+
+    function fetchLocations(kind, key) {
+        const cache = locationCache[kind];
+        if (cache[key]) return Promise.resolve(cache[key]);
+        const param = kind === 'account' ? 'account' : 'am';
+        return fetch(`/api/locations?${param}=${encodeURIComponent(key)}`)
+            .then(r => {
+                if (!r.ok) return r.text().then(t => { throw new Error(`API ${r.status}: ${t.slice(0, 160)}`); });
+                return r.json();
+            })
+            .then(d => { cache[key] = d; return d; });
+    }
+
+    // ── Row helpers ───────────────────────────────────────────
+    function locName(l) {
+        const company  = (l.company_name  || '').trim();
+        const location = (l.location_name || '').trim();
+        if (company && location && company !== location) return `${company} — ${location}`;
+        return company || location || `Location ${l.location_id}`;
+    }
+    const locDormant   = l => (l.published_jobs  || 0) === 0;
+    const locNoApps    = l => (l.total_apps_30d  || 0) === 0;
+    const locNoBoost   = l => !l.has_boosted_30d;
+    const locIndeedOff = l => String(l.indeed_status || '').trim().toLowerCase() !== 'enabled';
+    const locNoReply   = l => (l.total_chats_30d || 0) > 0 && (l.chats_employer_replied_30d || 0) === 0;
+    const locNeedsAttention = l => locDormant(l) || locNoApps(l);
+
+    const LOC_FILTERS = {
+        all:       { label: 'All',              test: () => true },
+        attention: { label: 'Needs attention',  test: locNeedsAttention },
+        dormant:   { label: 'No published job', test: locDormant },
+        noapps:    { label: 'Zero apps',        test: locNoApps },
+        noboost:   { label: 'No boost',         test: locNoBoost },
+        indeedoff: { label: 'Indeed off',       test: locIndeedOff },
+    };
+
+    function locSummary(rows) {
+        return {
+            total:     rows.length,
+            dormant:   rows.filter(locDormant).length,
+            noApps:    rows.filter(locNoApps).length,
+            noBoost:   rows.filter(locNoBoost).length,
+            indeedOff: rows.filter(locIndeedOff).length,
+            apps:      rows.reduce((s, l) => s + (l.total_apps_30d || 0), 0),
+            accounts:  new Set(rows.map(l => l.account_name)).size,
+        };
+    }
+
+    // Tile severity from the share of locations affected — same 25% / 50%
+    // thresholds the account-level configuration gap tiles already use.
+    function locSeverity(count, total) {
+        if (!total) return '';
+        const pct = (count / total) * 100;
+        return pct >= 50 ? 'crit' : pct >= 25 ? 'warn' : 'good';
+    }
+
+    function locTile(label, value, sub, cls, filterKey) {
+        const clickable = filterKey ? ` clickable${locFilter === filterKey ? ' selected' : ''}` : '';
+        const onclick   = filterKey ? ` onclick="setLocFilter('${filterKey}')" title="Filter the table to these locations"` : '';
+        return `<div class="loc-tile ${cls || ''}${clickable}"${onclick}>
+            <div class="loc-tile-label">${label}</div>
+            <div class="loc-tile-value">${value}</div>
+            <div class="loc-tile-sub">${sub}</div>
+        </div>`;
+    }
+
+    function pctOf(count, total) {
+        return total ? Math.round((count / total) * 100) + '% of locations' : '—';
+    }
+
+    function locMixCounts(rows) {
+        const dormant = rows.filter(locDormant).length;
+        const idle    = rows.filter(l => !locDormant(l) && locNoApps(l)).length;
+        return { active: rows.length - dormant - idle, idle, dormant };
+    }
+
+    function renderLocMixChart(canvasId, chartKey, mix) {
+        const { active, idle, dormant } = mix;
+        const total = active + idle + dormant;
+        destroyLocChart(chartKey);
+        locCharts[chartKey] = new Chart(document.getElementById(canvasId).getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Applications flowing', 'Jobs live, no apps', 'No published job'],
+                datasets: [{
+                    data: [active, idle, dormant],
+                    backgroundColor: [LOC_COLORS.active, LOC_COLORS.idle, LOC_COLORS.dormant],
+                    borderWidth: 2, borderColor: '#ffffff', hoverOffset: 4,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, cutout: '62%',
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 12 } },
+                    tooltip: { callbacks: { label: c => ` ${c.label}: ${c.parsed} (${total ? Math.round((c.parsed / total) * 100) : 0}%)` } },
+                },
+            },
+        });
+    }
+
+    // Horizontal bar charts grow with the number of rows so labels stay legible.
+    function locChartHeight(barCount, min = 200) {
+        return Math.max(min, barCount * 26 + 70);
+    }
+
+    function truncTick(max) {
+        return function (v) {
+            const t = this.getLabelForValue(v);
+            return t.length > max ? t.slice(0, max - 1) + '…' : t;
+        };
+    }
+
+    // ── Account Locations tab ─────────────────────────────────
+    function ensureAccountLocations() {
+        if (!currentAccountId) return;
+        const statusEl  = document.getElementById('accLocStatus');
+        const contentEl = document.getElementById('accLocContent');
+
+        if (contentEl.dataset.account === currentAccountId) return;
+
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Loading location data…';
+        contentEl.classList.add('hidden');
+
+        const requested = currentAccountId;
+        fetchLocations('account', requested)
+            .then(payload => {
+                if (currentAccountId !== requested) return; // user moved on
+                const rows = payload.locations || [];
+                currentLocations = rows;
+                if (rows.length === 0) {
+                    statusEl.innerHTML = 'No location rows on record for this account yet. Locations are refreshed by the daily sync from Metabase Q1513.';
+                    return;
+                }
+                statusEl.classList.add('hidden');
+                contentEl.classList.remove('hidden');
+                contentEl.dataset.account = requested;
+                renderAccountLocations(rows);
+            })
+            .catch(err => {
+                if (currentAccountId !== requested) return;
+                statusEl.classList.remove('hidden');
+                statusEl.innerHTML = `<span style="color:var(--red);">Could not load locations — ${escapeAttr(err.message)}</span>`;
+            });
+    }
+
+    function locCompanies(rows) {
+        return new Set(rows.map(l => (l.company_name || '').trim() || '—'));
+    }
+
+    function renderAccountLocations(rows) {
+        // Group by company by default once a flat list stops being scannable —
+        // but only when the account actually has more than one company.
+        locGrouped  = rows.length > LOC_GROUP_MIN && locCompanies(rows).size > 1;
+        locExpanded = new Set();
+        locFilter   = 'all';
+        locPage     = 1;
+
+        renderAccLocTiles(rows);
+        renderAccLocInsight(rows);
+        renderAccLocAppsChart(rows);
+        renderLocMixChart('accLocMixChart', 'accMix', locMixCounts(rows));
+        renderAccLocChatChart(rows);
+        renderAccLocCoverage(rows);
+        renderLocChips(rows);
+        renderAccLocTable();
+    }
+
+    function renderAccLocTiles(rows) {
+        const s = locSummary(rows);
+        document.getElementById('accLocTiles').innerHTML =
+            locTile('Locations', s.total, `${s.apps.toLocaleString()} application${s.apps === 1 ? '' : 's'} in 30d`, '', 'all') +
+            locTile('No Published Job', s.dormant,   pctOf(s.dormant, s.total),   locSeverity(s.dormant, s.total),   'dormant') +
+            locTile('Zero Apps (30d)',  s.noApps,    pctOf(s.noApps, s.total),    locSeverity(s.noApps, s.total),    'noapps') +
+            locTile('No Boost (30d)',   s.noBoost,   pctOf(s.noBoost, s.total),   locSeverity(s.noBoost, s.total),   'noboost') +
+            locTile('Indeed Disabled',  s.indeedOff, pctOf(s.indeedOff, s.total), locSeverity(s.indeedOff, s.total), 'indeedoff');
+    }
+
+    /**
+     * One-line answer to "where do this account's applications actually come
+     * from?" — the question a 300-bar chart can't answer at a glance.
+     */
+    function renderAccLocInsight(rows) {
+        const el = document.getElementById('accLocInsight');
+        const apps = rows.map(l => l.total_apps_30d || 0).sort((a, b) => b - a);
+        const total = apps.reduce((s, v) => s + v, 0);
+
+        if (rows.length < 8 || total === 0) { el.classList.add('hidden'); return; }
+
+        const topN     = Math.max(1, Math.round(rows.length * 0.1));
+        const topShare = Math.round((apps.slice(0, topN).reduce((s, v) => s + v, 0) / total) * 100);
+        const zero     = apps.filter(v => v === 0).length;
+        const median   = apps[Math.floor(apps.length / 2)];
+
+        el.classList.remove('hidden');
+        el.innerHTML =
+            `<span>Top <strong>${topN}</strong> location${topN === 1 ? '' : 's'} (10%) drive <strong>${topShare}%</strong> of applications</span>` +
+            `<span>Median location: <strong>${median}</strong> app${median === 1 ? '' : 's'}</span>` +
+            `<span><strong>${zero}</strong> location${zero === 1 ? '' : 's'} produced none</span>` +
+            `<span>Best location: <strong>${apps[0]}</strong></span>`;
+    }
+
+    // Application volume: per-location bars for a handful of locations, a
+    // distribution for anything bigger — 300 named bars are unreadable, but
+    // "how many of my locations get zero applications" always is.
+    const APP_BUCKETS = [
+        { label: '0',     test: n => n === 0 },
+        { label: '1–5',   test: n => n >= 1  && n <= 5 },
+        { label: '6–15',  test: n => n >= 6  && n <= 15 },
+        { label: '16–30', test: n => n >= 16 && n <= 30 },
+        { label: '31–60', test: n => n >= 31 && n <= 60 },
+        { label: '60+',   test: n => n > 60 },
+    ];
+
+    function renderAccLocAppsChart(rows) {
+        const titleEl = document.getElementById('accLocAppsTitle');
+        const noteEl  = document.getElementById('accLocAppsNote');
+        const wrap    = document.getElementById('accLocAppsWrap');
+        destroyLocChart('accApps');
+        const ctx = document.getElementById('accLocAppsChart').getContext('2d');
+
+        if (rows.length <= LOC_SMALL_ACCOUNT) {
+            const sorted = [...rows].sort((a, b) => (b.total_apps_30d || 0) - (a.total_apps_30d || 0));
+            titleEl.textContent = 'Applications by location';
+            noteEl.textContent  = 'Last 30 days, split by source';
+            wrap.style.height   = locChartHeight(sorted.length) + 'px';
+            locCharts.accApps = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sorted.map(locName),
+                    datasets: [
+                        { label: 'Indeed',  data: sorted.map(l => l.indeed_apps_30d  || 0), backgroundColor: LOC_COLORS.indeed,  borderRadius: 3 },
+                        { label: 'Signage', data: sorted.map(l => l.signage_apps_30d || 0), backgroundColor: LOC_COLORS.signage, borderRadius: 3 },
+                    ],
+                },
+                options: {
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { precision: 0 } },
+                        y: { stacked: true, grid: { display: false }, ticks: { callback: truncTick(28) } },
+                    },
+                    plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } },
+                },
+            });
+            return;
+        }
+
+        const counts = APP_BUCKETS.map(b => rows.filter(l => b.test(l.total_apps_30d || 0)).length);
+        titleEl.textContent = 'Applications per location';
+        noteEl.textContent  = `Distribution across all ${rows.length} locations — each point counts locations, last 30 days`;
+        wrap.style.height   = '300px';
+        locCharts.accApps = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: APP_BUCKETS.map(b => b.label),
+                datasets: [{
+                    label: 'Locations',
+                    data: counts,
+                    borderColor: LOC_COLORS.indeed,
+                    backgroundColor: 'rgba(37,99,235,.10)',
+                    fill: true, tension: 0.35, borderWidth: 2,
+                    // The zero bucket is the one that costs money — call it out
+                    // with a larger red point rather than a differently coloured bar.
+                    pointRadius:          counts.map((_, i) => i === 0 ? 6 : 4),
+                    pointHoverRadius:     counts.map((_, i) => i === 0 ? 8 : 6),
+                    pointBackgroundColor: counts.map((_, i) => i === 0 ? LOC_COLORS.dormant : LOC_COLORS.indeed),
+                    pointBorderColor: '#ffffff', pointBorderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { grid: { display: false }, title: { display: true, text: 'applications in last 30 days', color: '#94a3b8', font: { size: 10 } } },
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'locations', color: '#94a3b8', font: { size: 10 } } },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => ` ${c.parsed.y} location${c.parsed.y === 1 ? '' : 's'} · ${Math.round((c.parsed.y / rows.length) * 100)}%` } },
+                },
+            },
+        });
+    }
+
+    // Messaging as cohorts rather than per-location bars: one stacked bar that
+    // reads identically at 3 locations and at 400.
+    function renderAccLocChatChart(rows) {
+        const noChats = rows.filter(l => (l.total_chats_30d || 0) === 0).length;
+        const never   = rows.filter(locNoReply).length;
+        const some    = rows.filter(l => (l.total_chats_30d || 0) > 0
+                                      && (l.chats_employer_replied_30d || 0) > 0
+                                      && (l.chats_employer_replied_30d || 0) < (l.total_chats_30d || 0)).length;
+        const all     = rows.length - noChats - never - some;
+
+        destroyLocChart('accChat');
+        locCharts.accChat = new Chart(document.getElementById('accLocChatChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: [''],
+                datasets: [
+                    { label: 'Replied to all',  data: [all],     backgroundColor: LOC_COLORS.active,  borderRadius: 3 },
+                    { label: 'Replied to some', data: [some],    backgroundColor: LOC_COLORS.partial, borderRadius: 3 },
+                    { label: 'Never replied',   data: [never],   backgroundColor: LOC_COLORS.dormant, borderRadius: 3 },
+                    { label: 'No chats',        data: [noChats], backgroundColor: LOC_COLORS.neutral, borderRadius: 3 },
+                ],
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, beginAtZero: true, max: rows.length, grid: { display: false }, border: { display: false }, ticks: { precision: 0 } },
+                    y: { stacked: true, grid: { display: false }, ticks: { display: false } },
+                },
+                plugins: {
+                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, padding: 10 } },
+                    tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.x} location${c.parsed.x === 1 ? '' : 's'} (${Math.round((c.parsed.x / rows.length) * 100)}%)` } },
+                },
+            },
+        });
+
+        const chatting = rows.length - noChats;
+        document.getElementById('accLocChatNote').textContent = chatting === 0
+            ? 'No candidate chats at any location in the last 30 days.'
+            : `${never} of ${chatting} location${chatting === 1 ? '' : 's'} with candidate chats never replied.`;
+    }
+
+    // Adoption rates rather than per-location detail — the one view that stays
+    // constant-size however many locations the account has.
+    function renderAccLocCoverage(rows) {
+        const total = rows.length || 1;
+        const metrics = [
+            { label: 'Job published',    count: rows.filter(l => !locDormant(l)).length },
+            { label: 'Getting apps',     count: rows.filter(l => !locNoApps(l)).length },
+            { label: 'Indeed enabled',   count: rows.filter(l => !locIndeedOff(l)).length },
+            { label: 'Boosted (30d)',    count: rows.filter(l => !locNoBoost(l)).length },
+            { label: 'AI screening',     count: rows.filter(l => (l.screenings_requested_30d || 0) > 0).length },
+            { label: 'Salary on jobs',   count: rows.filter(l => (l.jobs_no_salary || 0) === 0).length },
+        ];
+        document.getElementById('accLocCoverage').innerHTML = metrics.map(m => {
+            const pct = Math.round((m.count / total) * 100);
+            const bc  = pct >= 70 ? LOC_COLORS.active : pct >= 40 ? LOC_COLORS.idle : LOC_COLORS.dormant;
+            return `<div class="adoption-row" style="padding:7px 0;">
+                <span class="adoption-label" style="width:110px;">${m.label}</span>
+                <div class="adoption-bar-bg"><div class="adoption-bar-fill" style="width:${pct}%;background:${bc};"></div></div>
+                <span class="adoption-pct">${pct}%</span>
+                <span class="adoption-count">${m.count}/${rows.length}</span>
+            </div>`;
+        }).join('');
+    }
+
+    function renderLocChips(rows) {
+        document.getElementById('locFilterChips').innerHTML = Object.entries(LOC_FILTERS).map(([key, f]) => {
+            const n = key === 'all' ? rows.length : rows.filter(f.test).length;
+            if (key !== 'all' && n === 0) return '';
+            return `<button class="loc-chip${locFilter === key ? ' active' : ''}" onclick="setLocFilter('${key}')">${f.label}<span class="loc-chip-count">${n}</span></button>`;
+        }).join('');
+
+        const toggle = document.getElementById('locGroupToggle');
+        if (locCompanies(rows).size > 1) {
+            toggle.innerHTML =
+                `<button class="loc-chip${locGrouped ? ' active' : ''}" onclick="setLocGrouped(true)">By company</button>` +
+                `<button class="loc-chip${locGrouped ? '' : ' active'}" onclick="setLocGrouped(false)">Flat list</button>`;
+        } else {
+            toggle.innerHTML = '';
+        }
+    }
+
+    function setLocFilter(key) {
+        locFilter = key;
+        locPage   = 1;
+        renderAccLocTiles(currentLocations);
+        renderLocChips(currentLocations);
+        renderAccLocTable();
+    }
+
+    function setLocGrouped(on) {
+        locGrouped = on;
+        locPage    = 1;
+        renderLocChips(currentLocations);
+        renderAccLocTable();
+    }
+
+    function locResetPage() { locPage = 1; }
+
+    function sortAccLoc(col) {
+        if (locSort.col === col) locSort.asc = !locSort.asc;
+        else locSort = { col, asc: col === 'name' };
+        locPage = 1;
+        renderAccLocTable();
+    }
+
+    function markSortHeaders(prefix, cols, state) {
+        cols.forEach(c => {
+            const el = document.getElementById(prefix + c);
+            if (!el) return;
+            el.innerText = el.innerText.replace(/ [↕↑↓]$/, '') + (c === state.col ? (state.asc ? ' ↑' : ' ↓') : ' ↕');
+        });
+    }
+
+    function locStatusPills(l) {
+        const pills = [];
+        if (locDormant(l))     pills.push('<span class="loc-pill crit">No published job</span>');
+        else if (locNoApps(l)) pills.push('<span class="loc-pill warn">No apps 30d</span>');
+        if (locIndeedOff(l))   pills.push(`<span class="loc-pill crit">Indeed ${escapeAttr(l.indeed_status || 'off')}</span>`);
+        if (locNoBoost(l))     pills.push('<span class="loc-pill warn">No boost</span>');
+        if ((l.jobs_no_salary || 0) > 0) pills.push(`<span class="loc-pill warn">${l.jobs_no_salary} job${l.jobs_no_salary > 1 ? 's' : ''} no salary</span>`);
+        if (locNoReply(l))     pills.push('<span class="loc-pill crit">Chats unanswered</span>');
+        if (pills.length === 0) pills.push('<span class="loc-pill ok">Healthy</span>');
+        return pills.join('');
+    }
+
+    function num(v) {
+        const n = v || 0;
+        return `<td class="loc-num${n === 0 ? ' zero' : ''}">${n}</td>`;
+    }
+
+    const LOC_SORT_COLS = ['name','published_jobs','total_apps_30d','indeed_apps_30d','signage_apps_30d','boosts_30d','screenings_completed_30d','total_chats_30d'];
+
+    function sortLocRows(rows, nameOf) {
+        return [...rows].sort((a, b) => {
+            let va, vb;
+            if (locSort.col === 'name') { va = nameOf(a).toLowerCase(); vb = nameOf(b).toLowerCase(); }
+            else { va = a[locSort.col] || 0; vb = b[locSort.col] || 0; }
+            if (va < vb) return locSort.asc ? -1 : 1;
+            if (va > vb) return locSort.asc ? 1 : -1;
+            return nameOf(a).localeCompare(nameOf(b));
+        });
+    }
+
+    function renderAccLocTable() {
+        const q       = (document.getElementById('locSearch').value || '').trim().toLowerCase();
+        const passes  = LOC_FILTERS[locFilter].test;
+        const matches = currentLocations.filter(l => passes(l) && (!q || locName(l).toLowerCase().includes(q)));
+
+        markSortHeaders('thLoc_', LOC_SORT_COLS, locSort);
+
+        const tbody = document.getElementById('locTableBody');
+        if (matches.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted);">No locations match these filters.</td></tr>';
+            document.getElementById('locCount').textContent = `0 of ${currentLocations.length} locations`;
+            document.getElementById('locPager').innerHTML = '';
+            return;
+        }
+
+        document.getElementById('locCount').textContent =
+            `${matches.length} of ${currentLocations.length} location${currentLocations.length === 1 ? '' : 's'}`;
+
+        if (locGrouped) renderLocGroupedRows(matches, q);
+        else            renderLocFlatRows(matches);
+    }
+
+    function renderLocFlatRows(matches) {
+        const sorted = sortLocRows(matches, locName);
+        const page   = paginate(sorted, locPage, 'locPage');
+
+        document.getElementById('locTableBody').innerHTML = page.map(l => `
+            <tr>
+                <td style="font-weight:600;">${escapeAttr(locName(l))}</td>
+                ${num(l.published_jobs)}
+                <td class="loc-num${(l.total_apps_30d || 0) === 0 ? ' zero' : ''}" style="font-weight:700;">${l.total_apps_30d || 0}</td>
+                ${num(l.indeed_apps_30d)}
+                ${num(l.signage_apps_30d)}
+                ${num(l.boosts_30d)}
+                <td class="loc-num${(l.screenings_requested_30d || 0) === 0 ? ' zero' : ''}">${l.screenings_completed_30d || 0}<span style="color:var(--subtle);">/${l.screenings_requested_30d || 0}</span></td>
+                <td class="loc-num${(l.total_chats_30d || 0) === 0 ? ' zero' : ''}">${l.total_chats_30d || 0}<span style="color:var(--subtle);">/${l.two_way_chats_30d || 0} 2-way</span></td>
+                <td>${locStatusPills(l)}</td>
+            </tr>`).join('');
+    }
+
+    /**
+     * Company rollup rows, each expandable to its own locations. For a
+     * franchise group this turns 300 rows into ~20 scannable ones.
+     */
+    function renderLocGroupedRows(matches, query) {
+        const groups = {};
+        for (const l of matches) {
+            const key = (l.company_name || '').trim() || '—';
+            if (!groups[key]) {
+                groups[key] = {
+                    name: key, locations: [], published_jobs: 0, total_apps_30d: 0,
+                    indeed_apps_30d: 0, signage_apps_30d: 0, boosts_30d: 0,
+                    screenings_completed_30d: 0, screenings_requested_30d: 0,
+                    total_chats_30d: 0, two_way_chats_30d: 0,
+                    dormant: 0, noApps: 0, noBoost: 0, indeedOff: 0,
+                };
+            }
+            const g = groups[key];
+            g.locations.push(l);
+            for (const f of ['published_jobs','total_apps_30d','indeed_apps_30d','signage_apps_30d','boosts_30d','screenings_completed_30d','screenings_requested_30d','total_chats_30d','two_way_chats_30d']) {
+                g[f] += l[f] || 0;
+            }
+            if (locDormant(l))   g.dormant++;
+            if (locNoApps(l))    g.noApps++;
+            if (locNoBoost(l))   g.noBoost++;
+            if (locIndeedOff(l)) g.indeedOff++;
+        }
+
+        const sorted = sortLocRows(Object.values(groups), g => g.name);
+        const page   = paginate(sorted, locPage, 'locPage');
+        // A search is a request to see the matches, not to go hunting for them.
+        const autoExpand = query.length > 0;
+
+        document.getElementById('locTableBody').innerHTML = page.map(g => {
+            const open = autoExpand || locExpanded.has(g.name);
+            const pills = [];
+            if (g.dormant)   pills.push(`<span class="loc-pill crit">${g.dormant} no job</span>`);
+            if (g.noApps)    pills.push(`<span class="loc-pill warn">${g.noApps} no apps</span>`);
+            if (g.noBoost)   pills.push(`<span class="loc-pill warn">${g.noBoost} no boost</span>`);
+            if (g.indeedOff) pills.push(`<span class="loc-pill crit">${g.indeedOff} Indeed off</span>`);
+            if (pills.length === 0) pills.push('<span class="loc-pill ok">All healthy</span>');
+
+            const head = `<tr class="loc-group-row" onclick="toggleLocGroup('${escapeAttr(g.name).replace(/'/g, "\\'")}')">
+                <td><span class="loc-caret">${open ? '▾' : '▸'}</span>${escapeAttr(g.name)}
+                    <span style="color:var(--subtle);font-weight:500;font-family:var(--mono);font-size:11px;"> ${g.locations.length} loc</span></td>
+                ${num(g.published_jobs)}
+                <td class="loc-num" style="font-weight:700;">${g.total_apps_30d}</td>
+                ${num(g.indeed_apps_30d)}
+                ${num(g.signage_apps_30d)}
+                ${num(g.boosts_30d)}
+                <td class="loc-num">${g.screenings_completed_30d}<span style="color:var(--subtle);">/${g.screenings_requested_30d}</span></td>
+                <td class="loc-num">${g.total_chats_30d}<span style="color:var(--subtle);">/${g.two_way_chats_30d} 2-way</span></td>
+                <td>${pills.join('')}</td>
+            </tr>`;
+
+            if (!open) return head;
+
+            const children = sortLocRows(g.locations, locName).map(l => `
+                <tr class="loc-child">
+                    <td>${escapeAttr((l.location_name || '').trim() || locName(l))}</td>
+                    ${num(l.published_jobs)}
+                    <td class="loc-num${(l.total_apps_30d || 0) === 0 ? ' zero' : ''}" style="font-weight:700;">${l.total_apps_30d || 0}</td>
+                    ${num(l.indeed_apps_30d)}
+                    ${num(l.signage_apps_30d)}
+                    ${num(l.boosts_30d)}
+                    <td class="loc-num${(l.screenings_requested_30d || 0) === 0 ? ' zero' : ''}">${l.screenings_completed_30d || 0}<span style="color:var(--subtle);">/${l.screenings_requested_30d || 0}</span></td>
+                    <td class="loc-num${(l.total_chats_30d || 0) === 0 ? ' zero' : ''}">${l.total_chats_30d || 0}<span style="color:var(--subtle);">/${l.two_way_chats_30d || 0} 2-way</span></td>
+                    <td>${locStatusPills(l)}</td>
+                </tr>`).join('');
+
+            return head + children;
+        }).join('');
+    }
+
+    function toggleLocGroup(name) {
+        if (locExpanded.has(name)) locExpanded.delete(name);
+        else locExpanded.add(name);
+        renderAccLocTable();
+    }
+
+    // ── Pagination ────────────────────────────────────────────
+    // Renders the pager for the given list and returns the current page slice.
+    function paginate(rows, page, pageVar) {
+        const pages   = Math.max(1, Math.ceil(rows.length / LOC_PAGE_SIZE));
+        const current = Math.min(page, pages);
+        if (pageVar === 'locPage')   locPage   = current;
+        if (pageVar === 'amLocPage') amLocPage = current;
+
+        const from = (current - 1) * LOC_PAGE_SIZE;
+        const slice = rows.slice(from, from + LOC_PAGE_SIZE);
+
+        const pagerId = pageVar === 'locPage' ? 'locPager' : 'amLocPager';
+        const pager   = document.getElementById(pagerId);
+        const setter  = pageVar === 'locPage' ? 'gotoLocPage' : 'gotoAmLocPage';
+        pager.innerHTML = pages <= 1
+            ? `<span>${rows.length} row${rows.length === 1 ? '' : 's'}</span><span></span>`
+            : `<span>Showing ${from + 1}–${Math.min(from + LOC_PAGE_SIZE, rows.length)} of ${rows.length}</span>
+               <span style="display:flex;gap:8px;align-items:center;">
+                 <button onclick="${setter}(${current - 1})" ${current === 1 ? 'disabled' : ''}>← Prev</button>
+                 <span>Page ${current} of ${pages}</span>
+                 <button onclick="${setter}(${current + 1})" ${current === pages ? 'disabled' : ''}>Next →</button>
+               </span>`;
+        return slice;
+    }
+
+    function gotoLocPage(p)   { locPage   = p; renderAccLocTable(); }
+    function gotoAmLocPage(p) { amLocPage = p; renderAmProblemTable(); }
+
+    // ── AM portfolio Location Drill-Down tab ──────────────────
+    function ensureAmLocations() {
+        if (!currentAmName) return;
+        const statusEl  = document.getElementById('amLocStatus');
+        const contentEl = document.getElementById('amLocContent');
+
+        if (contentEl.dataset.am === currentAmName) return;
+
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = 'Loading location data…';
+        contentEl.classList.add('hidden');
+
+        const requested = currentAmName;
+        fetchLocations('am', requested)
+            .then(payload => {
+                if (currentAmName !== requested) return;
+                currentAmLocData = payload;
+                if (!payload.totals || payload.totals.total === 0) {
+                    statusEl.innerHTML = 'No location rows on record for this portfolio yet. Locations are refreshed by the daily sync from Metabase Q1513.';
+                    return;
+                }
+                statusEl.classList.add('hidden');
+                contentEl.classList.remove('hidden');
+                contentEl.dataset.am = requested;
+                amLocPage = 1;
+                renderAmLocations(payload);
+            })
+            .catch(err => {
+                if (currentAmName !== requested) return;
+                statusEl.classList.remove('hidden');
+                statusEl.innerHTML = `<span style="color:var(--red);">Could not load locations — ${escapeAttr(err.message)}</span>`;
+            });
+    }
+
+    function renderAmLocations(payload) {
+        const t = payload.totals;
+
+        document.getElementById('amLocTiles').innerHTML =
+            locTile('Locations', t.total.toLocaleString(), `across ${t.accounts} account${t.accounts === 1 ? '' : 's'}`, '') +
+            locTile('No Published Job', t.dormant, pctOf(t.dormant, t.total), locSeverity(t.dormant, t.total)) +
+            locTile('Zero Apps (30d)',  t.noApps,  pctOf(t.noApps, t.total),  locSeverity(t.noApps, t.total)) +
+            locTile('No Boost (30d)',   t.noBoost, pctOf(t.noBoost, t.total), locSeverity(t.noBoost, t.total)) +
+            locTile('Applications (30d)', t.apps.toLocaleString(), t.total ? `${(t.apps / t.total).toFixed(1)} per location` : '—', t.apps === 0 ? 'crit' : '');
+
+        const topDorm = [...payload.rollup].sort((a, b) => b.dormant - a.dormant || b.total - a.total).slice(0, 10);
+        document.getElementById('amLocDormantWrap').style.height = locChartHeight(topDorm.length) + 'px';
+        destroyLocChart('amDormant');
+        locCharts.amDormant = new Chart(document.getElementById('amLocDormantChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: topDorm.map(a => a.account_name),
+                datasets: [
+                    { label: 'No published job', data: topDorm.map(a => a.dormant),           backgroundColor: LOC_COLORS.dormant, borderRadius: 3 },
+                    { label: 'Has jobs live',    data: topDorm.map(a => a.total - a.dormant), backgroundColor: LOC_COLORS.active,  borderRadius: 3 },
+                ],
+            },
+            options: {
+                indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, border: { display: false }, ticks: { precision: 0 } },
+                    y: { stacked: true, grid: { display: false }, ticks: { callback: truncTick(24) } },
+                },
+                plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } },
+            },
+        });
+
+        renderLocMixChart('amLocMixChart', 'amMix', { active: t.mixActive, idle: t.mixIdle, dormant: t.mixDormant });
+        renderAmLocTable();
+        renderAmProblemTable();
+    }
+
+    function sortAmLoc(col) {
+        if (amLocSort.col === col) amLocSort.asc = !amLocSort.asc;
+        else amLocSort = { col, asc: col === 'account_name' };
+        renderAmLocTable();
+    }
+
+    function renderAmLocTable() {
+        const rollup = [...(currentAmLocData?.rollup || [])];
+        rollup.sort((a, b) => {
+            let va = a[amLocSort.col], vb = b[amLocSort.col];
+            if (typeof va === 'string') { va = va.toLowerCase(); vb = String(vb).toLowerCase(); }
+            if (va < vb) return amLocSort.asc ? -1 : 1;
+            if (va > vb) return amLocSort.asc ? 1 : -1;
+            return 0;
+        });
+
+        markSortHeaders('thAmLoc_', ['account_name','total','dormant','noApps','noBoost','apps'], amLocSort);
+
+        document.getElementById('amLocTableBody').innerHTML = rollup.map(a => {
+            const activePct = a.total ? Math.round(((a.total - a.dormant) / a.total) * 100) : 0;
+            const barColor  = activePct >= 75 ? LOC_COLORS.active : activePct >= 50 ? LOC_COLORS.idle : LOC_COLORS.dormant;
+            const flag = n => n > 0 ? ' style="color:var(--red-text);font-weight:700;"' : ' style="color:var(--subtle);"';
+            return `<tr class="clickable-row" data-account-id="${escapeAttr(a.account_name)}">
+                <td style="font-weight:600;color:#1e40af;">${escapeAttr(a.account_name)}</td>
+                <td class="loc-num">${a.total}</td>
+                <td class="loc-num"${flag(a.dormant)}>${a.dormant}</td>
+                <td class="loc-num"${flag(a.noApps)}>${a.noApps}</td>
+                <td class="loc-num"${flag(a.noBoost)}>${a.noBoost}</td>
+                <td class="loc-num">${a.apps}</td>
+                <td><div class="health-bar-container"><div class="health-bar-bg"><div class="health-bar-fill" style="width:${activePct}%;background:${barColor};"></div></div><span class="loc-num" style="width:34px;">${activePct}%</span></div></td>
+            </tr>`;
+        }).join('');
+    }
+
+    function renderAmProblemTable() {
+        const problems  = currentAmLocData?.problems || [];
+        const truncated = currentAmLocData?.problemsTruncated || 0;
+        const tbody = document.getElementById('amLocProblemBody');
+
+        document.getElementById('amLocProblemNote').innerHTML =
+            'No published job or zero applications in the last 30 days — highest-ARR accounts first.' +
+            (truncated > 0 ? ` <strong>Showing the first ${problems.length}; ${truncated.toLocaleString()} more are listed on each account's own Locations tab.</strong>` : '');
+
+        if (problems.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--green-text);">Every location has a live job and applications in the last 30 days. 🎉</td></tr>';
+            document.getElementById('amLocPager').innerHTML = '';
+            return;
+        }
+
+        const page = paginate(problems, amLocPage, 'amLocPage');
+        tbody.innerHTML = page.map(l => `
+            <tr class="clickable-row" data-account-id="${escapeAttr(l.account_name)}">
+                <td style="font-weight:600;color:#1e40af;">${escapeAttr(l.account_name)}</td>
+                <td>${escapeAttr(locName(l))}</td>
+                ${num(l.published_jobs)}
+                ${num(l.total_apps_30d)}
+                <td>${locStatusPills(l)}</td>
+            </tr>`).join('');
     }
 
     // ===================== GLOBAL SEARCH =====================
