@@ -306,6 +306,27 @@
         .acc-table td { padding:12px; border-bottom:1px solid var(--border-light); font-size:13px; color:var(--text); }
 
         .quality-metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+        .quality-metrics.five { grid-template-columns:repeat(5,1fr); }
+
+        /* ── SCORE BREAKDOWN ──────────────────────────────────────── */
+        .hb-row { display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--border-light); }
+        .hb-row:last-child { border-bottom:none; }
+        .hb-label { font-size:12px; font-weight:500; color:var(--text); width:190px; flex-shrink:0; }
+        .hb-track { flex-grow:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; min-width:80px; }
+        .hb-fill  { height:100%; border-radius:3px; transition:width .5s cubic-bezier(.16,1,.3,1); }
+        .hb-earned { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--text); width:74px; text-align:right; flex-shrink:0; }
+        .hb-note { font-size:11px; color:var(--muted); flex-basis:100%; margin:-4px 0 6px 202px; font-style:italic; }
+        .hb-total { display:flex; justify-content:space-between; align-items:baseline; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--muted); }
+        .hb-total strong { font-family:var(--mono); font-size:20px; color:var(--text); font-weight:600; }
+
+        /* ── NPS ROLE SPLIT ───────────────────────────────────────── */
+        .nps-roles { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:14px; }
+        .nps-role { border:1px solid var(--border); border-radius:var(--r-sm); padding:10px 12px; background:var(--surface-2); }
+        .nps-role.primary { border-color:var(--ink); background:var(--surface); }
+        .nps-role-head { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); display:flex; justify-content:space-between; align-items:center; }
+        .nps-role-head .tag { font-size:9px; background:var(--ink); color:#fff; padding:1px 6px; border-radius:3px; letter-spacing:.03em; }
+        .nps-role-val { font-family:var(--mono); font-size:22px; font-weight:600; margin-top:6px; letter-spacing:-.02em; }
+        .nps-role-sub { font-size:11px; color:var(--subtle); margin-top:3px; }
         .metric-item { padding:14px 16px; border-radius:var(--r-sm); border:1px solid var(--border); background:var(--surface-2); border-left:3px solid var(--border); }
         .metric-item.warning  { border-left-color:#f59e0b; background:var(--amber-bg); border-color:var(--amber-border); }
         .metric-item.critical { border-left-color:var(--red);   background:var(--red-bg);   border-color:var(--red-border); }
@@ -803,6 +824,15 @@
         <!-- Critical Metrics Strip -->
         <div class="stats-grid" id="criticalMetrics" style="margin-top:0;margin-bottom:24px;"></div>
 
+        <!-- Why this score -->
+        <div class="panel" id="healthBreakdownPanel">
+            <div class="panel-title">
+                <span>🧮 Why this score</span>
+                <span style="font-size:12px;font-weight:500;color:var(--muted);" id="hbModelNote"></span>
+            </div>
+            <div id="healthBreakdownRows"></div>
+        </div>
+
         <!-- NPS Panel -->
         <div class="nps-panel" id="npsPanel">
             <div class="panel-title" style="margin-bottom:16px;">📊 NPS Signal</div>
@@ -820,6 +850,7 @@
                     <div class="nps-verbatim" id="npsVerbatim" style="display:none;"></div>
                 </div>
             </div>
+            <div id="npsRoleSplit"></div>
         </div>
 
         <!-- Tabs -->
@@ -836,7 +867,7 @@
                 <div class="tab-content active" id="accTab0">
                     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px;">
                         <div class="stat-card">
-                            <div class="stat-label"><span class="kpi-tooltip" style="font-size:12px;">Hire Rate<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Total hires divided by total interviews. Below 20% may indicate candidate quality issues.</span></span></div>
+                            <div class="stat-label"><span class="kpi-tooltip" style="font-size:12px;">Hire Rate<span class="kpi-tip-icon">?</span><span class="kpi-tip-text">Hires divided by <strong>applications</strong>. Many accounts hire straight from the application without interviewing on-platform, so an interview-based rate exceeded 100% for them. Interview&nbsp;→&nbsp;hire is shown under Interview Pipeline.</span></span></div>
                             <div class="stat-value" id="accHireRate">--%</div>
                             <div id="accHireRateSub" style="font-size:12px;color:#6b7280;margin-top:4px;">-- hires / -- interviews</div>
                         </div>
@@ -857,7 +888,7 @@
                         </div>
                     </div>
                     <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Interview Pipeline</h4>
-                    <div class="quality-metrics" style="margin-bottom:28px;" id="interviewMetrics"></div>
+                    <div class="quality-metrics five" style="margin-bottom:28px;" id="interviewMetrics"></div>
                     <h4 style="margin-bottom:14px;color:#374151;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-top:1px solid #f3f4f6;padding-top:24px;">Billing</h4>
                     <div id="supportBilling"></div>
                 </div>
@@ -1718,8 +1749,16 @@
         document.getElementById('accContextStrip').innerHTML = ctxParts.join('') || '<span style="color:#9ca3af;">No additional context</span>';
 
         // --- Critical metrics strip ---
-        const hireRate = data.total_interviews > 0 ? Math.round((data.total_hired / data.total_interviews) * 100) : null;
-        const hireRateColor = hireRate===null?'':hireRate<15?'critical':hireRate<30?'warning':'good';
+        // Hire rate is applications → hires. It used to divide by interviews,
+        // which exceeded 100% for the many accounts that hire straight from
+        // the application; interview → hire now lives in Interview Pipeline.
+        // Hourly apply-to-hire runs low, so the thresholds are 1% / 3%.
+        const applied  = Number(data.total_applied) || 0;
+        const hireRate = applied > 0 ? Math.round((data.total_hired / applied) * 1000) / 10 : null;
+        const hireRateColor = hireRate===null?'':hireRate<1?'critical':hireRate<3?'warning':'good';
+        const hireRateSub   = `${(data.total_hired ?? 0).toLocaleString()} hires / ${applied.toLocaleString()} applications`;
+        const ivToHire = data.total_interviews > 0
+            ? Math.round((data.total_hired / data.total_interviews) * 100) : null;
         const activeLocs = data.active_locations ?? '--';
         const totalLocs  = data.total_locations  ?? '--';
         const locRatio   = data.total_locations > 0 ? Math.round((data.active_locations / data.total_locations) * 100) : null;
@@ -1730,7 +1769,7 @@
 
         document.getElementById('criticalMetrics').innerHTML = `
             <div class="stat-card"><div class="stat-label">Billing Status</div><div class="stat-value ${data.has_balance?'critical':'good'}">${data.has_balance?'$'+(data.outstanding_balance||0).toLocaleString():'$0'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.has_balance?'past due balance':'no outstanding balance'}</div></div>
-            <div class="stat-card"><div class="stat-label">Hire Rate</div><div class="stat-value ${hireRateColor}">${hireRate!==null?hireRate+'%':'—'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${data.total_hired??0} hires / ${data.total_interviews??0} interviews</div></div>
+            <div class="stat-card"><div class="stat-label">Hire Rate</div><div class="stat-value ${hireRateColor}">${hireRate!==null?hireRate+'%':'—'}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${hireRateSub}</div></div>
             <div class="stat-card" onclick="switchAccTab(3)" style="cursor:pointer;" title="View location-level drill-down"><div class="stat-label">Active Locations</div><div class="stat-value ${locColor}">${activeLocs}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">of ${totalLocs} total${locRatio!==null?' ('+locRatio+'%)':''} <span style="color:#2563eb;font-weight:600;">· drill down →</span></div></div>
             <div class="stat-card"><div class="stat-label">Applications (30d)</div><div class="stat-value ${apps30dColor}">${apps30d}</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">${typeof openJobs==='number'?openJobs:'--'} jobs open now</div></div>`;
 
@@ -1766,6 +1805,9 @@
         } else {
             stddevEl.textContent = data.nps_response_count ? `${data.nps_response_count} response${data.nps_response_count>1?'s':''}` : '';
         }
+        renderHealthBreakdown(data);
+        renderNpsRoleSplit(data);
+
         const verbatimEl = document.getElementById('npsVerbatim');
         if (data.nps_latest_verbatim) {
             verbatimEl.textContent = `"${data.nps_latest_verbatim}"`;
@@ -1777,7 +1819,7 @@
         // --- TAB 0: ROI ---
         document.getElementById('accHireRate').textContent = hireRate!==null?hireRate+'%':'—';
         document.getElementById('accHireRate').className   = 'stat-value '+hireRateColor;
-        document.getElementById('accHireRateSub').textContent = `${data.total_hired??0} hires / ${data.total_interviews??0} interviews`;
+        document.getElementById('accHireRateSub').textContent = hireRateSub;
         document.getElementById('accApps30d').textContent  = apps30d;
         document.getElementById('accApps30d').className    = 'stat-value '+apps30dColor;
         document.getElementById('accActiveLocs').textContent = activeLocs;
@@ -1791,7 +1833,8 @@
         const tthDays = data.avg_time_to_hire_days  > 0 ? Number(data.avg_time_to_hire_days).toFixed(1)  : null;
         document.getElementById('interviewMetrics').innerHTML = `
             <div class="metric-item ${hasCalendars?'good':'critical'}"><div class="metric-label">Connected Calendars</div><div class="metric-value" style="font-size:18px;">${hasCalendars?'✓ Connected':'✕ Not Connected'}</div></div>
-            <div class="metric-item ${data.total_interviews===0?'warning':''}"><div class="metric-label">Total Interviews</div><div class="metric-value">${data.total_interviews??'—'}</div></div>
+            <div class="metric-item ${data.total_interviews===0?'warning':''}"><div class="metric-label">Total Interviews</div><div class="metric-value">${data.total_interviews??'—'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">run on-platform</div></div>
+            <div class="metric-item ${ivToHire!==null&&ivToHire<20?'warning':''}"><div class="metric-label">Interview → Hire</div><div class="metric-value">${ivToHire!==null?ivToHire+'%':'N/A'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">${data.total_interviews>0?`${data.total_hired??0} hires / ${data.total_interviews} interviews`:'no on-platform interviews'}</div></div>
             <div class="metric-item ${ttiDays&&parseFloat(ttiDays)>7?'warning':''}"><div class="metric-label">Avg Time to Invite</div><div class="metric-value">${ttiDays?ttiDays+'d':'N/A'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">from application to invite</div></div>
             <div class="metric-item ${tthDays&&parseFloat(tthDays)>30?'warning':''}"><div class="metric-label">Avg Time to Hire</div><div class="metric-value">${tthDays?tthDays+'d':'N/A'}</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">from application to hired</div></div>`;
 
@@ -1913,6 +1956,87 @@
             actRow('Last NPS Response',      daysSince(data.nps_latest_response_date)) +
             actRow('Last NextMatch Use',     daysSince(data.nextmatch_last_used)) +
             actRow('Data Last Synced',       daysSince(data.last_synced));
+    }
+
+    // ===================== SCORE BREAKDOWN =====================
+    // health_breakdown is written by the sync (lib/health.js) as an array of
+    // { key, label, weight, earned, pct, note }. Showing it turns the score
+    // from a number an AM has to trust into one they can audit and argue with.
+
+    function renderHealthBreakdown(data) {
+        const panel = document.getElementById('healthBreakdownPanel');
+        const rows  = Array.isArray(data.health_breakdown) ? data.health_breakdown : null;
+
+        if (!rows || rows.length === 0) {
+            panel.classList.add('hidden');
+            return;
+        }
+        panel.classList.remove('hidden');
+
+        document.getElementById('hbModelNote').textContent =
+            `model v${data.score_model_version ?? '?'} · ${rows.length} factors`;
+
+        document.getElementById('healthBreakdownRows').innerHTML = rows.map(f => {
+            const pct   = Number(f.pct) || 0;
+            const color = pct >= 70 ? 'var(--green)' : pct >= 40 ? '#f59e0b' : 'var(--red)';
+            return `<div class="hb-row">
+                    <span class="hb-label">${escapeAttr(f.label)}</span>
+                    <div class="hb-track"><div class="hb-fill" style="width:${pct}%;background:${color};"></div></div>
+                    <span class="hb-earned">${f.earned} / ${f.weight}</span>
+                </div>` +
+                (f.note ? `<div class="hb-note">${escapeAttr(f.note)}</div>` : '');
+        }).join('') +
+        `<div class="hb-total"><span>Weighted total</span><strong>${data.health_score ?? '—'}</strong></div>`;
+    }
+
+    // ===================== NPS ROLE SPLIT =====================
+    // Company admins are the buyers and renewal decision-makers, so only their
+    // responses feed the health score. Employer and other-role responses are
+    // shown here for context — they are real feedback, just not the same signal.
+
+    const NPS_ROLE_META = {
+        admin:    { label: 'Company admin', sub: 'drives health score' },
+        employer: { label: 'Employer',      sub: 'context only' },
+        other:    { label: 'Other roles',   sub: 'context only' },
+    };
+
+    function renderNpsRoleSplit(data) {
+        const el = document.getElementById('npsRoleSplit');
+        const bd = data.nps_role_breakdown;
+
+        if (!data.nps_role_data_available) {
+            el.innerHTML = `<div style="margin-top:14px;font-size:12px;color:var(--subtle);font-style:italic;">
+                Role breakdown unavailable — no visitor role field resolved in Pendo yet, so this account's NPS is blended across all respondents.
+            </div>`;
+            return;
+        }
+        if (!bd || Object.keys(bd).length === 0) {
+            el.innerHTML = `<div style="margin-top:14px;font-size:12px;color:var(--subtle);font-style:italic;">
+                No role-tagged NPS responses for this account.
+            </div>`;
+            return;
+        }
+
+        el.innerHTML = '<div class="nps-roles">' + Object.keys(NPS_ROLE_META).map(tier => {
+            const meta = NPS_ROLE_META[tier];
+            const r    = bd[tier];
+            if (!r) {
+                return `<div class="nps-role">
+                    <div class="nps-role-head"><span>${meta.label}</span></div>
+                    <div class="nps-role-val" style="color:var(--subtle);">—</div>
+                    <div class="nps-role-sub">no responses</div>
+                </div>`;
+            }
+            const bandOf = v => v >= 9 ? 'var(--green)' : v >= 7 ? '#d97706' : 'var(--red)';
+            return `<div class="nps-role${tier === 'admin' ? ' primary' : ''}">
+                <div class="nps-role-head">
+                    <span>${meta.label}</span>
+                    ${tier === 'admin' ? '<span class="tag">SCORED</span>' : ''}
+                </div>
+                <div class="nps-role-val" style="color:${bandOf(r.latest)};">${r.latest}</div>
+                <div class="nps-role-sub">avg ${r.avg} · ${r.count} response${r.count === 1 ? '' : 's'} · ${r.promoters}P/${r.passives}Pa/${r.detractors}D</div>
+            </div>`;
+        }).join('') + '</div>';
     }
 
     // ===================== LOCATION DRILL-DOWN =====================

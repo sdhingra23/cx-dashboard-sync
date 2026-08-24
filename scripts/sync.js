@@ -21,12 +21,13 @@
 // ============================================================
 
 import { mbGetSession, buildMetabaseData, mbRunQuestion } from '../lib/metabase.js';
-import { buildLocationRows, LOCATION_QUESTION_ID } from '../lib/locations.js';
+import { buildLocationRows, buildLocationConfigByAccount, LOCATION_QUESTION_ID } from '../lib/locations.js';
 import { buildChargebeeData }                  from '../lib/chargebee.js';
-import { fetchNpsResponses, fetchAccountActivity } from '../lib/pendo.js';
+import { fetchNpsResponses, fetchAccountActivity, fetchVisitorRoles, classifyRole } from '../lib/pendo.js';
 import { normalizeName }                       from '../lib/normalize.js';
 import { loadAmAssignments }                   from '../lib/am.js';
-import { computeHealthScore, healthStatus, computeHireRate, npsBand, npsTrend } from '../lib/health.js';
+import { computeHealthBreakdown, healthStatus, computeHireRate, computeInterviewToHireRate,
+         npsBand, npsTrend, SCORE_MODEL_VERSION } from '../lib/health.js';
 import { computeFlags, FLAG_LABELS, URGENT_FLAGS } from '../lib/flags.js';
 import { postFlagAlert, postEscalationAlert }   from '../lib/slack.js';
 import {
@@ -260,7 +261,7 @@ async function main() {
   }
 
   // ── 2. Fetch all sources in parallel ────────────────────────
-  const [mbMap, rawLocationRows, cbRows, npsResponses, pendoActivity, existingAccounts] = await Promise.all([
+  const [mbMap, rawLocationRows, cbRows, npsResponses, pendoActivity, visitorRoles, existingAccounts] = await Promise.all([
     mbToken
       ? buildMetabaseData(METABASE_QUESTIONS, mbToken).catch(e => {
           console.error('Metabase buildData failed:', e.message); return {};
@@ -286,6 +287,13 @@ async function main() {
 
     fetchAccountActivity(process.env.PENDO_API_KEY).catch(e => {
       console.error('Pendo activity fetch failed:', e.message); return {};
+    }),
+
+    // Visitor roles — joined to NPS responses so the health score can weigh
+    // company-admin sentiment separately from everyone else's.
+    fetchVisitorRoles(process.env.PENDO_API_KEY).catch(e => {
+      console.error('Pendo role fetch failed (NPS stays blended):', e.message);
+      return { field: null, roles: {}, distinct: [] };
     }),
 
     // Existing accounts (for cx_gut_score — set directly via /api/gut-score,
@@ -427,6 +435,20 @@ async function main() {
   // Group responses by Pendo account ID, then match to CB account_id.
   // Pendo uses its own account IDs — we match by normalizing the account name
   // stored alongside each response (if available), or fall back to Pendo accountId.
+  // Tag every response with the respondent's role before grouping. Pendo
+  // stores role on the visitor, so this is a join on visitorId.
+  const roleDataAvailable = Boolean(visitorRoles.field);
+  let taggedResponses = 0;
+  for (const r of npsResponses) {
+    const raw = visitorRoles.roles[r.pendo_visitor_id];
+    r.role_raw  = raw || null;
+    r.role_tier = raw ? classifyRole(raw) : null;
+    if (raw) taggedResponses++;
+  }
+  if (roleDataAvailable) {
+    console.log(`NPS roles: ${taggedResponses}/${npsResponses.length} responses matched to a visitor role`);
+  }
+
   const npsByAccountId = {};
   for (const r of npsResponses) {
     const aid = r.account_id;
@@ -481,6 +503,39 @@ async function main() {
     merged[name].nps_response_count      = responses.length;
     merged[name].nps_score_stddev        = stddev;
     merged[name].nps_days_since_response = daysSinceResponse;
+
+    // ── Role split ───────────────────────────────────────────
+    // Company-admin responses drive the health score; employer and other
+    // responses are kept for the account page's role breakdown but never
+    // scored — see factorSentiment() in lib/health.js.
+    const byTier = { admin: [], employer: [], other: [] };
+    for (const r of sorted) {
+      if (!r.role_tier) continue;
+      byTier[r.role_tier].push(r);
+    }
+
+    const breakdown = {};
+    for (const [tier, list] of Object.entries(byTier)) {
+      if (list.length === 0) continue;
+      const scores = list.map(r => r.score);
+      breakdown[tier] = {
+        count:       list.length,
+        avg:         Math.round((scores.reduce((s, v) => s + v, 0) / scores.length) * 10) / 10,
+        latest:      list[0].score,
+        latest_date: list[0].response_date || null,
+        promoters:   scores.filter(v => v >= 9).length,
+        passives:    scores.filter(v => v >= 7 && v < 9).length,
+        detractors:  scores.filter(v => v < 7).length,
+      };
+    }
+
+    const adminLatest = byTier.admin[0] || null;
+    merged[name].nps_admin_score         = adminLatest ? adminLatest.score : null;
+    merged[name].nps_admin_band          = adminLatest ? npsBand(adminLatest.score) : null;
+    merged[name].nps_admin_response_date = adminLatest ? (adminLatest.response_date || null) : null;
+    merged[name].nps_admin_count         = byTier.admin.length;
+    merged[name].nps_role_breakdown      = Object.keys(breakdown).length ? breakdown : null;
+    merged[name].nps_role_data_available = roleDataAvailable;
   }
 
   // Merge Pendo activity (keyed by Pendo account ID)
@@ -496,6 +551,46 @@ async function main() {
     if (acc.pendo_last_active !== undefined) continue;
     const prev = existingPendoByName[acc.account_name];
     if (prev) Object.assign(acc, prev);
+  }
+
+  // ── Location rows + per-account config aggregates ────────────
+  // Built here rather than at the upsert step because the health score's
+  // readiness factor reads these aggregates; the same rows are written to
+  // Supabase later without being rebuilt.
+  let locationRows = [];
+  try {
+    const built = buildLocationRows(rawLocationRows, new Set(Object.keys(merged)), SYNCED_AT);
+    locationRows = built.rows;
+    if (built.skippedNoId > 0) {
+      console.warn(`Locations: skipped ${built.skippedNoId} row(s) with no location_id or account_name.`);
+    }
+    if (built.skippedUnknownAccount.length > 0) {
+      console.warn(`Locations: skipped rows for ${built.skippedUnknownAccount.length} account(s) not on the dashboard — ${built.skippedUnknownAccount.slice(0, 10).join(', ')}${built.skippedUnknownAccount.length > 10 ? ', …' : ''}`);
+    }
+    const locConfig = buildLocationConfigByAccount(locationRows);
+    for (const [name, cfg] of Object.entries(locConfig)) {
+      if (merged[name]) Object.assign(merged[name], cfg);
+    }
+    console.log(`Locations: ${locationRows.length} rows, config aggregates for ${Object.keys(locConfig).length} accounts`);
+  } catch (e) {
+    console.error('Location row build failed (health readiness falls back to job-level config):', e.message);
+  }
+
+  // Verbatim lookup: account_name → verbatims from the last 24h.
+  // Built here rather than alongside the other flags because the health
+  // score's sentiment factor reads the churn signal, and health is computed
+  // before computeFlags() runs (which in turn depends on health_score).
+  // computeFlags() recomputes the same flag from the same input, so the two
+  // cannot drift.
+  const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000);
+  const recentVerbatimsMap = {};
+  for (const r of npsResponses) {
+    if (r.response_date && new Date(r.response_date) >= cutoff24h && r.verbatim) {
+      const name = accountIdToName[r.account_id];
+      if (!name) continue;
+      if (!recentVerbatimsMap[name]) recentVerbatimsMap[name] = [];
+      recentVerbatimsMap[name].push(r.verbatim);
+    }
   }
 
   // Load 7-days-ago snapshots for billing grace-period check.
@@ -539,6 +634,10 @@ async function main() {
       ? Math.round((Number(acc.no_tta_apps_loc_count) || 0) / ttaTotalLocs * 1000) / 10
       : null;
 
+    // Churn signal — set before scoring so factorSentiment() can see it.
+    acc.flag_churn_verbatim = (recentVerbatimsMap[acc.account_name] || []).some(text =>
+      CHURN_KEYWORDS.some(kw => String(text || '').toLowerCase().includes(kw)));
+
     // linkedin_enabled arrives from Q1515 as 1/0, not a boolean — coerce it so
     // the Supabase boolean column and the dashboard's checks agree. Accounts
     // absent from Q1515 stay null ("unknown"), not false.
@@ -548,8 +647,11 @@ async function main() {
     acc.is_zero_roi = (Number(acc.perc_locs_no_indeed) || 0) > 70
                    || (Number(acc.perc_locs_no_active_jobs) || 0) > 70;
 
-    // hire_rate (null when no interview data)
-    acc.hire_rate = computeHireRate(acc);
+    // hire_rate is now applications → hires. The old interview → hires ratio
+    // exceeded 100% for accounts that hire straight from the application, so
+    // it moves to its own field and stays a funnel metric only.
+    acc.hire_rate             = computeHireRate(acc);
+    acc.interview_to_hire_rate = computeInterviewToHireRate(acc);
 
     // billing_balance_effective: only penalise health score for balances that
     // (a) exceed 10% of ARR — filters out small ACH-in-transit invoices, and
@@ -560,9 +662,13 @@ async function main() {
     acc.billing_balance_effective =
       (rawBalance > arrThreshold && balanceWas7dAgo > 0) ? rawBalance : 0;
 
-    // health_score + health_status
-    acc.health_score  = computeHealthScore(acc);
-    acc.health_status = healthStatus(acc.health_score);
+    // health_score + health_status. The per-factor breakdown is persisted so
+    // the dashboard can show why an account scores what it does.
+    const breakdown        = computeHealthBreakdown(acc);
+    acc.health_score       = breakdown.score;
+    acc.health_status      = healthStatus(breakdown.score);
+    acc.health_breakdown   = breakdown.factors;
+    acc.score_model_version = SCORE_MODEL_VERSION;
 
     acc.last_synced = new Date().toISOString();
   }
@@ -575,19 +681,6 @@ async function main() {
 
   // ── 6. Compute flags + build Slack alerts ────────────────────
   const flagAlerts = []; // { flagKey, flagLabel, account, metricNote }
-
-  // Build verbatim lookup: account_name → verbatims from last 24h
-  // accountIdToName is already built above (Pendo ID → normalized name)
-  const cutoff24h = new Date(Date.now() - 24 * 3600 * 1000);
-  const recentVerbatimsMap = {};
-  for (const r of npsResponses) {
-    if (r.response_date && new Date(r.response_date) >= cutoff24h && r.verbatim) {
-      const name = accountIdToName[r.account_id];
-      if (!name) continue;
-      if (!recentVerbatimsMap[name]) recentVerbatimsMap[name] = [];
-      recentVerbatimsMap[name].push(r.verbatim);
-    }
-  }
 
   for (const acc of Object.values(merged)) {
     const yesterday = yesterdayMap[acc.account_name] || null;
@@ -629,6 +722,9 @@ async function main() {
     health_status:               acc.health_status               ?? null,
     is_zero_roi:                 acc.is_zero_roi                 ?? false,
     hire_rate:                   acc.hire_rate                   ?? null,
+    interview_to_hire_rate:      acc.interview_to_hire_rate      ?? null,
+    health_breakdown:            acc.health_breakdown            ?? null,
+    score_model_version:         acc.score_model_version         ?? null,
     nps_latest_score:            acc.nps_latest_score            ?? null,
     nps_latest_band:             acc.nps_latest_band             ?? null,
     nps_latest_verbatim:         acc.nps_latest_verbatim         ?? null,
@@ -638,6 +734,12 @@ async function main() {
     nps_response_count:          acc.nps_response_count          ?? null,
     nps_score_stddev:            acc.nps_score_stddev            ?? null,
     nps_days_since_response:     acc.nps_days_since_response     ?? null,
+    nps_admin_score:             acc.nps_admin_score             ?? null,
+    nps_admin_band:              acc.nps_admin_band              ?? null,
+    nps_admin_response_date:     acc.nps_admin_response_date     ?? null,
+    nps_admin_count:             acc.nps_admin_count             ?? null,
+    nps_role_breakdown:          acc.nps_role_breakdown          ?? null,
+    nps_role_data_available:     acc.nps_role_data_available     ?? false,
     perc_locs_no_indeed:         acc.perc_locs_no_indeed         ?? null,
     perc_locs_no_job_boosts:     acc.perc_locs_no_job_boosts     ?? null,
     perc_locs_no_active_jobs:    acc.perc_locs_no_active_jobs    ?? null,
@@ -650,6 +752,7 @@ async function main() {
     locs_no_active_jobs:         acc.locs_no_active_jobs         ?? null,
     total_jobs_count:            acc.total_jobs_count            ?? null,
     jobs_without_salary:         acc.jobs_without_salary         ?? null,
+    nextmatch_requested:         acc.nextmatch_requested         ?? null,
     nextmatch_calls_90d:         acc.nextmatch_calls_90d         ?? null,
     nextmatch_last_used:         acc.nextmatch_last_used         ?? null,
     total_hired:                 acc.total_hired                 ?? null,
@@ -706,6 +809,7 @@ async function main() {
     arr:                          acc.arr,
     health_score:                 acc.health_score,
     health_status:                acc.health_status,
+    score_model_version:          acc.score_model_version,
     is_zero_roi:                  acc.is_zero_roi,
     outstanding_balance:          acc.outstanding_balance,
     nps_score:                    acc.nps_latest_score,
@@ -747,17 +851,6 @@ async function main() {
   // on the dashboard can never be reached from the UI.
   let locationCount = 0;
   try {
-    const knownNames = new Set(Object.keys(merged));
-    const { rows: locationRows, skippedNoId, skippedUnknownAccount } =
-      buildLocationRows(rawLocationRows, knownNames, SYNCED_AT);
-
-    if (skippedNoId > 0) {
-      console.warn(`Locations: skipped ${skippedNoId} row(s) with no location_id or account_name.`);
-    }
-    if (skippedUnknownAccount.length > 0) {
-      console.warn(`Locations: skipped rows for ${skippedUnknownAccount.length} account(s) not on the dashboard — ${skippedUnknownAccount.slice(0, 10).join(', ')}${skippedUnknownAccount.length > 10 ? ', …' : ''}`);
-    }
-
     await upsertLocations(locationRows);
     locationCount = locationRows.length;
     await deleteStaleLocations(SYNCED_AT, locationRows.length);
