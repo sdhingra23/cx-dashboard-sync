@@ -36,3 +36,9 @@ alter table public.snapshots add column if not exists score_model_version    int
 -- without re-querying Pendo; role_tier is the admin/employer/other bucket.
 alter table public.nps_responses add column if not exists role_raw  text;
 alter table public.nps_responses add column if not exists role_tier text;
+
+-- ── model v3: base + adoption bonus ─────────────────────────
+-- The score is now a 100-point base plus an additive adoption bonus that can
+-- never subtract. Both halves are stored so the dashboard can show them apart.
+alter table public.accounts add column if not exists health_base_score integer;
+alter table public.accounts add column if not exists health_bonus      numeric;

@@ -808,11 +808,12 @@
                             Health Score <span style="font-size:10px;background:#e5e7eb;color:#4b5563;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">?</span>
                             <span class="tooltip-text">
                                 <strong>Score Breakdown</strong>
-                                • Pipeline Health (Indeed apps): 25%<br>
-                                • Feature Adoption: 25%<br>
-                                • NPS Trend: 20%<br>
-                                • Billing Health: 15%<br>
-                                • Pendo Engagement: 15%<br><br>
+                                • Pipeline health: 30%<br>
+                                • Hiring effectiveness: 20%<br>
+                                • Sentiment (admin NPS): 20%<br>
+                                • Product engagement: 15%<br>
+                                • Billing: 15%<br>
+                                • Feature adoption: bonus up to +10, never subtracts<br><br>
                                 <span style="color:#9ca3af;">Below 40 = Critical. Above 75 = Healthy.</span>
                             </span>
                         </div>
@@ -1974,19 +1975,29 @@
         panel.classList.remove('hidden');
 
         document.getElementById('hbModelNote').textContent =
-            `model v${data.score_model_version ?? '?'} · ${rows.length} factors`;
+            `model v${data.score_model_version ?? '?'} · 100-point base + bonus`;
 
         document.getElementById('healthBreakdownRows').innerHTML = rows.map(f => {
             const pct   = Number(f.pct) || 0;
-            const color = pct >= 70 ? 'var(--green)' : pct >= 40 ? '#f59e0b' : 'var(--red)';
-            return `<div class="hb-row">
+            // The bonus is additive and can never subtract, so a low bonus is
+            // not a failing grade — it gets its own colour rather than going red.
+            const color = f.isBonus
+                ? (pct > 0 ? '#2563eb' : 'var(--border)')
+                : (pct >= 70 ? 'var(--green)' : pct >= 40 ? '#f59e0b' : 'var(--red)');
+            const earned = f.isBonus ? `+${f.earned} / ${f.weight}` : `${f.earned} / ${f.weight}`;
+            return `<div class="hb-row"${f.isBonus ? ' style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px;"' : ''}>
                     <span class="hb-label">${escapeAttr(f.label)}</span>
                     <div class="hb-track"><div class="hb-fill" style="width:${pct}%;background:${color};"></div></div>
-                    <span class="hb-earned">${f.earned} / ${f.weight}</span>
+                    <span class="hb-earned"${f.isBonus ? ' style="color:#2563eb;"' : ''}>${earned}</span>
                 </div>` +
                 (f.note ? `<div class="hb-note">${escapeAttr(f.note)}</div>` : '');
         }).join('') +
-        `<div class="hb-total"><span>Weighted total</span><strong>${data.health_score ?? '—'}</strong></div>`;
+        `<div class="hb-total">
+            <span>Base ${data.health_base_score ?? '—'} + adoption bonus ${data.health_bonus ?? 0}
+              <span style="display:block;margin-top:3px;font-size:11px;color:var(--subtle);">Feature adoption can raise this score but never lowers it.</span>
+            </span>
+            <strong>${data.health_score ?? '—'}</strong>
+        </div>`;
     }
 
     // ===================== NPS ROLE SPLIT =====================

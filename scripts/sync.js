@@ -664,10 +664,12 @@ async function main() {
 
     // health_score + health_status. The per-factor breakdown is persisted so
     // the dashboard can show why an account scores what it does.
-    const breakdown        = computeHealthBreakdown(acc);
-    acc.health_score       = breakdown.score;
-    acc.health_status      = healthStatus(breakdown.score);
-    acc.health_breakdown   = breakdown.factors;
+    const breakdown         = computeHealthBreakdown(acc);
+    acc.health_score        = breakdown.score;
+    acc.health_status       = healthStatus(breakdown.score);
+    acc.health_breakdown    = breakdown.factors;
+    acc.health_base_score   = breakdown.baseScore;
+    acc.health_bonus        = breakdown.bonus;
     acc.score_model_version = SCORE_MODEL_VERSION;
 
     acc.last_synced = new Date().toISOString();
@@ -724,6 +726,8 @@ async function main() {
     hire_rate:                   acc.hire_rate                   ?? null,
     interview_to_hire_rate:      acc.interview_to_hire_rate      ?? null,
     health_breakdown:            acc.health_breakdown            ?? null,
+    health_base_score:           acc.health_base_score           ?? null,
+    health_bonus:                acc.health_bonus                ?? null,
     score_model_version:         acc.score_model_version         ?? null,
     nps_latest_score:            acc.nps_latest_score            ?? null,
     nps_latest_band:             acc.nps_latest_band             ?? null,
