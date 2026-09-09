@@ -365,6 +365,9 @@ async function main() {
       // AM assignment: Chargebee's cf_account_manager custom field.
       account_manager:     accountManager,
       is_managed:          accountManager.toLowerCase() !== 'unassigned',
+      // Parent brand: Chargebee's cf_parent_brand custom field — groups
+      // franchisee/location accounts under one brand for the brand rollup.
+      parent_brand:        cb.parent_brand ?? null,
     };
   }
 
@@ -719,6 +722,7 @@ async function main() {
     account_id:                  acc.account_id                  ?? null,
     account_manager:             acc.account_manager             ?? 'Unassigned',
     is_managed:                  acc.is_managed                  ?? false,
+    parent_brand:                acc.parent_brand                ?? null,
     email:                       acc.email                       ?? null,
     arr:                         (Number.isFinite(acc.arr) ? acc.arr : null) ?? 0,
     outstanding_balance:         acc.outstanding_balance         ?? null,

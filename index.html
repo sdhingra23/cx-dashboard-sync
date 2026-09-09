@@ -1357,12 +1357,14 @@
             }).join('');
 
         const total = franchisees.length || 1;
+        // Same adoption signals as the account-level health breakdown
+        // (lib/health.js adoptionBonus) — kept consistent across both views.
         const adoptionMetrics = [
-            { label: 'NextMatch AI',       count: franchisees.filter(f => f.nextmatch_enabled && f.nextmatch_calls_90d > 0).length },
-            { label: 'Job Boost',          count: franchisees.filter(f => f.job_boost_enabled && f.job_boost_last_used_days < 90).length },
-            { label: 'Text-to-Apply',      count: franchisees.filter(f => f.tta_flow_enabled && f.tta_flow_applications_90d > 0).length },
-            { label: 'Onboarding',         count: franchisees.filter(f => f.onboarding_enabled).length },
-            { label: 'Connected Calendar', count: franchisees.filter(f => !!f.connected_calendars).length },
+            { label: 'AI Screening (NextMatch)', count: franchisees.filter(f => (Number(f.nextmatch_calls_90d) || 0) > 0).length },
+            { label: 'Job Boost',                count: franchisees.filter(f => f.perc_locs_no_job_boosts != null && f.perc_locs_no_job_boosts < 100).length },
+            { label: 'Text-to-Apply',             count: franchisees.filter(f => f.perc_locs_no_tta != null && f.perc_locs_no_tta < 100).length },
+            { label: 'Onboarding',                count: franchisees.filter(f => f.onboarding_enabled).length },
+            { label: 'LinkedIn',                  count: franchisees.filter(f => f.linkedin_enabled).length },
         ];
         document.getElementById('bAdoptionRows').innerHTML = adoptionMetrics.map(m => {
             const pct = Math.round((m.count / total) * 100);

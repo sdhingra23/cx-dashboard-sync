@@ -64,7 +64,10 @@ export default async function handler(req, res) {
       const arr      = acc.arr || 0;
       const ae       = acc.account_manager;
       const isRed    = acc.health_status === 'red' || (acc.outstanding_balance || 0) > 0;
-      const isManaged = Boolean(ae);
+      // acc.is_managed is the real column (false for "Unassigned") —
+      // Boolean(ae) would always be true since account_manager defaults to
+      // the string 'Unassigned' rather than null.
+      const isManaged = acc.is_managed === true;
 
       if (isManaged) {
         totalManagedArr += arr;
@@ -76,6 +79,69 @@ export default async function handler(req, res) {
       }
     }
 
+    // ── Brand rollup (grouped by Chargebee's cf_parent_brand) ─────────
+    // Every account tagged to the same brand rolls up into one summary —
+    // scale, ARR split, health distribution, and adoption/gap rates across
+    // the whole brand, same shape the Brand Dashboard UI already renders.
+    const brandGroups = {};
+    for (const acc of data) {
+      const brandName = acc.parent_brand;
+      if (!brandName) continue; // independent accounts aren't part of a brand
+      (brandGroups[brandName] ||= []).push(acc);
+    }
+
+    const brands = {};
+    for (const [brandName, accs] of Object.entries(brandGroups)) {
+      const totalArr = accs.reduce((s, a) => s + (a.arr || 0), 0);
+      const managedAccs = accs.filter(a => a.is_managed === true);
+      const managedArr = managedAccs.reduce((s, a) => s + (a.arr || 0), 0);
+
+      const sumArrWhere = status => accs.filter(a => a.health_status === status).reduce((s, a) => s + (a.arr || 0), 0);
+
+      const createDates = accs.map(a => a.create_date).filter(Boolean).sort();
+      const customerSince = createDates.length ? createDates[0].slice(0, 4) : '—'; // year only
+
+      // Most common AM across the brand's accounts stands in for a
+      // brand-level "strategic owner" — there's no dedicated field for it.
+      const amCounts = {};
+      for (const a of accs) {
+        const am = a.is_managed ? a.account_manager : 'Unassigned';
+        amCounts[am] = (amCounts[am] || 0) + 1;
+      }
+      const owner = Object.entries(amCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unassigned';
+
+      brands[brandName] = {
+        name:            brandName,
+        logo:            null,
+        franchiseeCount: accs.length,
+        totalArr,
+        managedArr,
+        unmanagedArr:    totalArr - managedArr,
+        redArr:          sumArrWhere('red'),
+        amberArr:        sumArrWhere('amber'),
+        greenArr:        sumArrWhere('green'),
+        customerSince,
+        owner,
+        franchisees: accs.map(a => ({
+          id:                        a.account_name,
+          account_name:              a.account_name,
+          arr:                       a.arr || 0,
+          health_status:             a.health_status,
+          health_score:              a.health_score,
+          perc_locs_no_indeed:       a.perc_locs_no_indeed,
+          perc_locs_no_active_jobs:  a.perc_locs_no_active_jobs,
+          perc_locs_no_job_boosts:   a.perc_locs_no_job_boosts,
+          perc_jobs_no_perks:        a.perc_jobs_no_perks,
+          perc_jobs_no_salaries:     a.perc_jobs_no_salaries,
+          perc_locs_no_tta:          a.perc_locs_no_tta,
+          nextmatch_calls_90d:       a.nextmatch_calls_90d,
+          onboarding_enabled:        a.onboarding_enabled,
+          linkedin_enabled:          a.linkedin_enabled,
+          primary_risk:              null, // no per-account "primary risk" label computed yet
+        })),
+      };
+    }
+
     return res.status(200).json({
       accounts,
       vpData: {
@@ -84,7 +150,7 @@ export default async function handler(req, res) {
         amStats,
         history: [], // trend chart data — populated once snapshots accumulate
       },
-      brands: {},   // brand rollup — can be populated from snapshots if needed
+      brands,
     });
   } catch (err) {
     console.error('/api/dashboard error:', err);
