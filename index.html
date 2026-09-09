@@ -597,8 +597,6 @@
                     <span>Scale: <strong id="bFranchiseCount">0</strong> franchisees | <strong id="bTotalArr">$0</strong> total ARR</span>
                     <span>•</span>
                     <span>Customer Since: <strong id="bTenure">YYYY</strong></span>
-                    <span>•</span>
-                    <span>Strategic Owner: <strong id="bOwner">Name</strong></span>
                 </div>
             </div>
         </div>
@@ -1322,7 +1320,6 @@
         document.getElementById('bFranchiseCount').innerText = b.franchiseeCount;
         document.getElementById('bTotalArr').innerText = formatMoney(b.totalArr);
         document.getElementById('bTenure').innerText = b.customerSince;
-        document.getElementById('bOwner').innerText = b.owner;
         document.getElementById('bManagedArr').innerText = formatMoney(b.managedArr);
         document.getElementById('bUnmanagedText').innerText = b.unmanagedArr > 0 ? `+ ${formatMoney(b.unmanagedArr)} in unmanaged ARR` : `All ARR is managed by AMs`;
         document.getElementById('bRedArr').innerText = formatMoney(b.redArr);

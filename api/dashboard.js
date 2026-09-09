@@ -101,15 +101,6 @@ export default async function handler(req, res) {
       const createDates = accs.map(a => a.create_date).filter(Boolean).sort();
       const customerSince = createDates.length ? createDates[0].slice(0, 4) : '—'; // year only
 
-      // Most common AM across the brand's accounts stands in for a
-      // brand-level "strategic owner" — there's no dedicated field for it.
-      const amCounts = {};
-      for (const a of accs) {
-        const am = a.is_managed ? a.account_manager : 'Unassigned';
-        amCounts[am] = (amCounts[am] || 0) + 1;
-      }
-      const owner = Object.entries(amCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Unassigned';
-
       brands[brandName] = {
         name:            brandName,
         logo:            null,
@@ -121,7 +112,6 @@ export default async function handler(req, res) {
         amberArr:        sumArrWhere('amber'),
         greenArr:        sumArrWhere('green'),
         customerSince,
-        owner,
         franchisees: accs.map(a => ({
           id:                        a.account_name,
           account_name:              a.account_name,
