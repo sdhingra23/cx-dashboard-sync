@@ -1,0 +1,25 @@
+name: Find Duplicate Accounts
+
+# One-off diagnostic — not on a schedule. Run manually from the Actions tab.
+# Output shows up in this run's job log (see the "Run script" step).
+on:
+  workflow_dispatch:
+
+jobs:
+  scan:
+    name: Scan Chargebee for near-duplicate accounts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run script
+        env:
+          CHARGEBEE_API_KEY: ${{ secrets.CHARGEBEE_API_KEY }}
+        run: node scripts/find-duplicate-accounts.js
