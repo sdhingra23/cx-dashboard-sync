@@ -4,6 +4,42 @@
 
 import { createClient } from '@supabase/supabase-js';
 
+const PAGE = 500;
+
+// Supabase PostgREST caps responses at db-max-rows (default 1,000), so a
+// full table read has to be paginated. Fetching pages one at a time in a
+// while-loop means N sequential network round trips — with the function's
+// 10s ceiling (vercel.json), that adds up fast as the accounts table grows
+// (e.g. after the Chargebee migration added more rows) or when a second
+// paginated query runs after the first. This gets the total row count up
+// front, then fires every page request concurrently instead.
+//
+// postgrest-js query builders aren't reusable (no public .clone(), and
+// filter/order methods only exist on the builder .select() returns — not on
+// the bare .from() result), so `buildQuery` is a factory called fresh for
+// the count and for every page. It must apply .select(cols, opts) itself —
+// opts is {count:'exact', head:true} for the count check, undefined for a
+// real page fetch — and chain any filters/order after that.
+async function fetchAllPaginated(buildQuery) {
+  const { count, error: countErr } = await buildQuery({ count: 'exact', head: true });
+  if (countErr) throw countErr;
+
+  const totalPages = Math.max(1, Math.ceil((count || 0) / PAGE));
+  const pagePromises = [];
+  for (let page = 0; page < totalPages; page++) {
+    const from = page * PAGE;
+    pagePromises.push(buildQuery().range(from, from + PAGE - 1));
+  }
+
+  const results = await Promise.all(pagePromises);
+  let all = [];
+  for (const { data: rows, error } of results) {
+    if (error) throw error;
+    all = all.concat(rows || []);
+  }
+  return all;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -15,24 +51,7 @@ export default async function handler(req, res) {
       process.env.SUPABASE_SERVICE_KEY
     );
 
-    // Supabase PostgREST caps responses at db-max-rows (default 1,000).
-    // Paginate in 500-row pages to guarantee we retrieve all accounts.
-    const PAGE = 500;
-    let data = [];
-    let page = 0;
-    while (true) {
-      const from = page * PAGE;
-      const { data: rows, error } = await sb
-        .from('accounts')
-        .select('*')
-        .order('account_name', { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (error) throw error;
-      if (!rows || rows.length === 0) break;
-      data = data.concat(rows);
-      if (rows.length < PAGE) break;
-      page++;
-    }
+    const data = await fetchAllPaginated(opts => sb.from('accounts').select('*', opts).order('account_name', { ascending: true }));
 
     // Build the shape the frontend expects:
     //   { accounts: { [account_name]: accountObj }, vpData: {...} }
@@ -132,61 +151,12 @@ export default async function handler(req, res) {
       };
     }
 
-    // ── Portfolio health trajectory (last 8 weeks) ────────────────────
-    // One point per week: ARR summed by health tier across each account's
-    // snapshot on that date. Sampled weekly (today, 7d ago, 14d ago, ...)
-    // rather than scanning every daily snapshot in the range — cheaper, and
-    // "Last 8 Weeks" only needs 8 points. A day sync happened to fail on one
-    // of these exact sampled dates would show that week as all-zero rather
-    // than falling back to the nearest available day; acceptable for a
-    // trend chart, but worth knowing if a specific week looks suspiciously empty.
-    const WEEKS_OF_HISTORY = 8;
-    const weeklyDates = [];
-    for (let i = WEEKS_OF_HISTORY - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setUTCDate(d.getUTCDate() - i * 7);
-      weeklyDates.push(d.toISOString().split('T')[0]);
-    }
-
-    let historySnaps = [];
-    {
-      let hPage = 0;
-      while (true) {
-        const from = hPage * PAGE;
-        const { data: rows, error } = await sb
-          .from('snapshots')
-          .select('snapshot_date, arr, health_status')
-          .in('snapshot_date', weeklyDates)
-          .range(from, from + PAGE - 1);
-        if (error) throw error;
-        if (!rows || rows.length === 0) break;
-        historySnaps = historySnaps.concat(rows);
-        if (rows.length < PAGE) break;
-        hPage++;
-      }
-    }
-
-    const historyByDate = {};
-    for (const s of historySnaps) {
-      const bucket = historyByDate[s.snapshot_date] ||= { greenArr: 0, amberArr: 0, redArr: 0 };
-      const arr = s.arr || 0;
-      if (s.health_status === 'red') bucket.redArr += arr;
-      else if (s.health_status === 'amber') bucket.amberArr += arr;
-      else if (s.health_status === 'green') bucket.greenArr += arr;
-    }
-
-    const history = weeklyDates.map(dateStr => ({
-      date: new Date(`${dateStr}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-      ...(historyByDate[dateStr] || { greenArr: 0, amberArr: 0, redArr: 0 }),
-    }));
-
     return res.status(200).json({
       accounts,
       vpData: {
         totalManagedArr,
         revenueInRed,
         amStats,
-        history,
       },
       brands,
     });

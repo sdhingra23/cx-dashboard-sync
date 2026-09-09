@@ -115,7 +115,6 @@
         }
 
         /* ── LAYOUT ──────────────────────────────────────────────── */
-        .vp-middle-split { display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:16px; }
         .brand-split     { display:grid; grid-template-columns:1fr 2fr;   gap:16px; margin-bottom:16px; }
         .brand-bottom-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
 
@@ -544,28 +543,22 @@
             </div>
         </div>
 
-        <div class="vp-middle-split">
-            <div class="panel">
-                <div class="panel-title"><span>📈 Portfolio Health Trajectory</span><span style="font-size:12px;font-weight:500;color:#6b7280;">(Last 8 Weeks)</span></div>
-                <div style="height:300px;width:100%;"><canvas id="healthTrendChart"></canvas></div>
-            </div>
-            <div class="panel">
-                <div class="panel-title"><span>⚠️ Risk Concentration by AM</span></div>
-                <div style="overflow-y:auto;max-height:300px;">
-                    <table class="data-table">
-                        <thead><tr>
-                            <th>Account Manager</th>
-                            <th style="text-align:right;">ARR at Risk</th>
-                            <th style="text-align:center;">
-                                <span class="tooltip-wrapper" style="justify-content:center;">Zero-ROI Accts
-                                    <span style="font-size:10px;background:#e5e7eb;color:#4b5563;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">?</span>
-                                    <span class="tooltip-text" style="left:auto;right:0;transform:none;">Accounts where 70%+ of locations have no Indeed apps or no active jobs.</span>
-                                </span>
-                            </th>
-                        </tr></thead>
-                        <tbody id="vpLeaderboardBody"></tbody>
-                    </table>
-                </div>
+        <div class="panel">
+            <div class="panel-title"><span>⚠️ Risk Concentration by AM</span></div>
+            <div style="overflow-y:auto;max-height:300px;">
+                <table class="data-table">
+                    <thead><tr>
+                        <th>Account Manager</th>
+                        <th style="text-align:right;">ARR at Risk</th>
+                        <th style="text-align:center;">
+                            <span class="tooltip-wrapper" style="justify-content:center;">Zero-ROI Accts
+                                <span style="font-size:10px;background:#e5e7eb;color:#4b5563;border-radius:50%;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;">?</span>
+                                <span class="tooltip-text" style="left:auto;right:0;transform:none;">Accounts where 70%+ of locations have no Indeed apps or no active jobs.</span>
+                            </span>
+                        </th>
+                    </tr></thead>
+                    <tbody id="vpLeaderboardBody"></tbody>
+                </table>
             </div>
         </div>
 
@@ -1044,7 +1037,6 @@
     let sortColumn = 'arr';
     let sortAscending = false;
     let currentAMFilter = 'all';
-    let trendChartInstance = null;
     let brandDonutChartInstance = null;
     let amDonutChartInstance = null;
     let accGaugeChartInstance = null;
@@ -1184,23 +1176,6 @@
 
         const detractorCount = allAccArray.filter(a => a.nps_latest_band === 'detractor').length;
         document.getElementById('vpDetractorCount').innerText = detractorCount;
-
-        // Trend chart
-        if (trendChartInstance) trendChartInstance.destroy();
-        const ctx = document.getElementById('healthTrendChart').getContext('2d');
-        const histData = (vpData.history && vpData.history.length) ? vpData.history : [{ date: 'No Data Yet', greenArr: 0, amberArr: 0, redArr: 0 }];
-        trendChartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: { labels: histData.map(h => h.date), datasets: [
-                { label: 'Critical ARR', data: histData.map(h => h.redArr),   backgroundColor: '#dc2626', borderRadius: 3 },
-                { label: 'At-Risk ARR',  data: histData.map(h => h.amberArr), backgroundColor: '#d97706', borderRadius: 3 },
-                { label: 'Healthy ARR',  data: histData.map(h => h.greenArr), backgroundColor: '#059669', borderRadius: 3 },
-            ]},
-            options: { responsive: true, maintainAspectRatio: false,
-                scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, border: { display: false }, ticks: { callback: v => '$' + (v/1000) + 'k' } } },
-                plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } } }
-            }
-        });
 
         // AM leaderboard
         const amZeroRoi = {};
