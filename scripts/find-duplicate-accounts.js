@@ -4,7 +4,7 @@
 //
 // One-off diagnostic — NOT part of the sync pipeline.
 //
-// Tests two things about why the same real-world account can show up as
+// Tests several things about why the same real-world account can show up as
 // multiple separate rows on the dashboard:
 //
 //  1. ID-shape hypothesis: does a "wrong" duplicate customer record
@@ -17,11 +17,23 @@
 //     company names that our actual dashboard grouping (exact match after
 //     a bare .trim()) would NOT catch and would currently show as separate
 //     accounts.
+//  3. Native hierarchy fields: our production fetch only ever selects a
+//     handful of named columns, so if Chargebee's Customer Hierarchy /
+//     Business Entity feature is enabled on this site, a parent/child
+//     relationship field could already exist on every customer object and
+//     we'd never have looked at it. Dumps the full key set of a sample of
+//     raw customer objects and flags anything hierarchy-shaped.
+//  4. Location-suffix clustering: for multi-location clients billed as one
+//     separate Chargebee CUSTOMER per location (not one customer with many
+//     subscriptions — that case already rolls up correctly), each location's
+//     company name usually shares a common prefix with a trailing qualifier
+//     ("White Castle - Downtown", "White Castle #12"). Strips common
+//     location-suffix patterns and re-groups to surface prefix-sharing
+//     candidates. Heuristic — every group needs a human eyeball, since a
+//     company whose real name ends in a number would false-positive here.
 //
-// For every such near-duplicate group, reports each member's raw name,
-// Chargebee customer ID, ARR, and whether the ID is numeric or
-// Chargebee-generated — so the ID-shape hypothesis can be checked against
-// real numbers instead of two examples.
+// For every candidate group, reports each member's raw name, Chargebee
+// customer ID, ARR, and whether the ID is numeric or Chargebee-generated.
 //
 // Usage:
 //   CHARGEBEE_API_KEY=xxx node scripts/find-duplicate-accounts.js
@@ -103,6 +115,64 @@ async function main() {
     console.log(`    that's real correlation, not coincidence.`);
   }
   console.log('');
+
+  // ── 3. Native hierarchy field check ─────────────────────────────────────
+  console.log('── Native Chargebee hierarchy fields ────────────────────────');
+  const sampleSize = Math.min(50, paying.length);
+  const allKeys = new Set();
+  for (const c of paying.slice(0, sampleSize)) {
+    for (const k of Object.keys(c)) allKeys.add(k);
+  }
+  const hierarchyLike = [...allKeys].filter(k => /parent|hierarch|business_entit|child/i.test(k));
+  if (hierarchyLike.length > 0) {
+    console.log(`  Found field(s) that look hierarchy-related on the raw customer object:`);
+    for (const k of hierarchyLike) {
+      const withValue = paying.slice(0, sampleSize).filter(c => c[k] != null && c[k] !== '');
+      console.log(`    ${k}  (set on ${withValue.length}/${sampleSize} sampled)`);
+      if (withValue.length) console.log(`      e.g. ${JSON.stringify(withValue[0][k])}`);
+    }
+    console.log(`  → If populated, this may be the CORRECT way to group multi-location accounts —`);
+    console.log(`    worth checking before relying on the name-based heuristic below.`);
+  } else {
+    console.log('  None found on the sampled customer objects — all fields present:');
+    console.log(`    ${[...allKeys].sort().join(', ')}`);
+    console.log('  → No native hierarchy field visible via the API for this site/plan.');
+    console.log('    (Doesn\'t rule out Business Entities being used elsewhere in Chargebee —');
+    console.log('     just that it\'s not exposed on GET /customers for this account.)');
+  }
+  console.log('');
+
+  // ── 4. Location-suffix clustering (heuristic) ────────────────────────────
+  console.log('── Location-suffix clustering (heuristic — review each group) ──');
+  const suffixGroups = new Map(); // strippedKey -> [customer, ...]
+  for (const c of paying) {
+    const rawName = c.company || [c.first_name, c.last_name].filter(Boolean).join(' ');
+    if (!rawName) continue;
+    const stripped = looseNormalize(stripLocationSuffix(rawName));
+    if (!stripped) continue;
+    if (!suffixGroups.has(stripped)) suffixGroups.set(stripped, []);
+    suffixGroups.get(stripped).push({ ...c, _rawName: rawName });
+  }
+
+  // Only groups where stripping actually changed something (i.e. a real
+  // suffix was found) AND there's more than one distinct exact name —
+  // otherwise this just re-finds groups already caught above.
+  const suffixCandidates = [...suffixGroups.values()].filter(members => {
+    const exactNames = new Set(members.map(m => m._rawName.trim()));
+    if (exactNames.size < 2) return false;
+    return members.some(m => stripLocationSuffix(m._rawName) !== m._rawName.trim());
+  });
+
+  console.log(`${suffixCandidates.length} candidate group(s) — same prefix, different location-like suffix.\n`);
+  for (const members of suffixCandidates.sort((a, b) => b.length - a.length)) {
+    console.log(`  "${members[0]._rawName}" family (${members.length} records) — REVIEW BEFORE TRUSTING:`);
+    for (const m of members) {
+      const idType = isNumericId(m.id) ? 'numeric' : 'auto-gen';
+      const arr = ((m.mrr || 0) / 100 * 12).toFixed(0);
+      console.log(`      [${idType.padEnd(8)}] id=${m.id.padEnd(20)} name="${m._rawName}"  ARR=$${arr}`);
+    }
+    console.log('');
+  }
 }
 
 async function fetchAllActiveCustomers(apiKey) {
@@ -138,6 +208,21 @@ function looseNormalize(name) {
     .replace(/[.,]/g, '')
     .replace(/\b(llc|inc|incorporated|corp|corporation|co|ltd|company)\b\.?/g, '')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Strips a trailing location-like qualifier so multi-location clients billed
+// as separate Chargebee customers (one per location, not one customer with
+// many subscriptions) can be clustered by their shared prefix. Heuristic,
+// not exhaustive — every match needs a human to confirm it's really a
+// location suffix and not part of the actual company name.
+function stripLocationSuffix(name) {
+  return String(name)
+    .replace(/\s*[-–—]\s*(store|location|loc|unit|branch|shop)?\s*#?\d+\s*$/i, '')
+    .replace(/\s*[-–—]\s*[A-Za-z][A-Za-z .]{0,24}$/, '')   // "- Downtown", "- North Ave"
+    .replace(/\s*#\s*\d+\s*$/, '')                          // "#12"
+    .replace(/\s*\(\s*[^)]{1,30}\)\s*$/, '')                // "(Chicago)"
+    .replace(/\s+\d{2,6}\s*$/, '')                          // trailing bare number
     .trim();
 }
 
