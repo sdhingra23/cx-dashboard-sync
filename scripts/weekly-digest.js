@@ -141,7 +141,13 @@ async function main() {
     for (const flagKey of WEEKLY_FLAGS) {
       const isTrueNow   = Boolean(thisSnap[flagKey]);
       const wasTrueLast = Boolean(prevSnap?.[flagKey]);
-      if (!isTrueNow || wasTrueLast) continue; // not newly triggered
+      // No snapshot at all last week means this account has no known prior
+      // state (first week being tracked — e.g. newly onboarded, or newly
+      // entering the Chargebee-driven universe after being invisible to the
+      // dashboard before), not that the flag was false. Treating it as
+      // "was false" would report every pre-existing condition as newly
+      // triggered on day one, as if it all just happened this week.
+      if (!isTrueNow || wasTrueLast || !prevSnap) continue; // not newly triggered
 
       entries.push({ flagKey, label: FLAG_LABELS[flagKey], metric: weeklyFlagNote(flagKey, acc) });
     }
