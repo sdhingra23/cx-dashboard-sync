@@ -132,13 +132,61 @@ export default async function handler(req, res) {
       };
     }
 
+    // ── Portfolio health trajectory (last 8 weeks) ────────────────────
+    // One point per week: ARR summed by health tier across each account's
+    // snapshot on that date. Sampled weekly (today, 7d ago, 14d ago, ...)
+    // rather than scanning every daily snapshot in the range — cheaper, and
+    // "Last 8 Weeks" only needs 8 points. A day sync happened to fail on one
+    // of these exact sampled dates would show that week as all-zero rather
+    // than falling back to the nearest available day; acceptable for a
+    // trend chart, but worth knowing if a specific week looks suspiciously empty.
+    const WEEKS_OF_HISTORY = 8;
+    const weeklyDates = [];
+    for (let i = WEEKS_OF_HISTORY - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - i * 7);
+      weeklyDates.push(d.toISOString().split('T')[0]);
+    }
+
+    let historySnaps = [];
+    {
+      let hPage = 0;
+      while (true) {
+        const from = hPage * PAGE;
+        const { data: rows, error } = await sb
+          .from('snapshots')
+          .select('snapshot_date, arr, health_status')
+          .in('snapshot_date', weeklyDates)
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        if (!rows || rows.length === 0) break;
+        historySnaps = historySnaps.concat(rows);
+        if (rows.length < PAGE) break;
+        hPage++;
+      }
+    }
+
+    const historyByDate = {};
+    for (const s of historySnaps) {
+      const bucket = historyByDate[s.snapshot_date] ||= { greenArr: 0, amberArr: 0, redArr: 0 };
+      const arr = s.arr || 0;
+      if (s.health_status === 'red') bucket.redArr += arr;
+      else if (s.health_status === 'amber') bucket.amberArr += arr;
+      else if (s.health_status === 'green') bucket.greenArr += arr;
+    }
+
+    const history = weeklyDates.map(dateStr => ({
+      date: new Date(`${dateStr}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+      ...(historyByDate[dateStr] || { greenArr: 0, amberArr: 0, redArr: 0 }),
+    }));
+
     return res.status(200).json({
       accounts,
       vpData: {
         totalManagedArr,
         revenueInRed,
         amStats,
-        history: [], // trend chart data — populated once snapshots accumulate
+        history,
       },
       brands,
     });
