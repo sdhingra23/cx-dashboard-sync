@@ -9,7 +9,7 @@ on:
       pages:
         description: 'How many 100-record pages to scan'
         type: string
-        default: '2'
+        default: '10'
 
 jobs:
   scan:

@@ -25,7 +25,6 @@ import { buildLocationRows, buildLocationConfigByAccount, LOCATION_QUESTION_ID }
 import { buildChargebeeData }                  from '../lib/chargebee.js';
 import { fetchNpsResponses, fetchAccountActivity, fetchVisitorRoles, classifyRole } from '../lib/pendo.js';
 import { normalizeName }                       from '../lib/normalize.js';
-import { loadAmAssignments }                   from '../lib/am.js';
 import { computeHealthBreakdown, healthStatus, computeHireRate, computeInterviewToHireRate,
          npsBand, npsTrend, SCORE_MODEL_VERSION } from '../lib/health.js';
 import { computeFlags, FLAG_LABELS, URGENT_FLAGS } from '../lib/flags.js';
@@ -339,41 +338,42 @@ async function main() {
 
   // ── 3. Merge into one map keyed by normalized account name ───
   //
-  // CSV is the source of truth for which accounts exist on the dashboard.
-  // Chargebee, Metabase, and Pendo data are merged in only for accounts
-  // already in the CSV — Chargebee-only accounts are ignored.
-
-  // Seed from AM assignments CSV (defines the account universe)
-  const amMap = loadAmAssignments();
+  // Chargebee is the source of truth for which accounts exist on the
+  // dashboard (previously the AM assignments CSV). buildChargebeeData()
+  // only returns active, paying customers, so an account that churns (or
+  // drops to $0 MRR) simply stops appearing here — deleteStaleAccounts()
+  // below prunes it from Supabase the same run, and a newly signed customer
+  // appears the same way, both with zero manual list maintenance. Metabase
+  // and Pendo data are merged in only for accounts Chargebee already knows
+  // about — see hangingMbAccounts below for accounts that don't match.
   const merged = {};
 
-  for (const [name, am] of Object.entries(amMap)) {
+  for (const cb of cbRows) {
+    const name = cb.account_name; // already normalized by buildChargebeeData
+    if (!name) continue;
+
+    const accountManager = cb.account_manager || 'Unassigned';
     merged[name] = {
-      account_name:    name,
-      account_manager: am.account_manager,
-      arr:             am.arr,       // null if not set — Chargebee fills in below
-      is_managed:      am.is_managed,
+      account_name:        name,
+      account_id:          cb.account_id,
+      email:               cb.email,
+      arr:                 cb.arr ?? 0,
+      outstanding_balance: cb.outstanding_balance,
+      cb_customer_count:   cb.cb_customer_count,
+      create_date:         cb.create_date  ?? null,
+      renewal_date:        cb.renewal_date ?? null,
+      // AM assignment: Chargebee's cf_account_manager custom field.
+      account_manager:     accountManager,
+      is_managed:          accountManager.toLowerCase() !== 'unassigned',
     };
   }
 
-  console.log(`CSV accounts loaded: ${Object.keys(merged).length}`);
-
-  // Merge Chargebee billing data (CSV accounts only — skip Chargebee-only accounts)
-  for (const cb of cbRows) {
-    const name = cb.account_name; // already normalized by buildChargebeeData
-    if (!merged[name]) continue;  // not in CSV — skip
-
-    merged[name].account_id          = cb.account_id;
-    merged[name].email               = cb.email;
-    merged[name].outstanding_balance = cb.outstanding_balance;
-    merged[name].cb_customer_count   = cb.cb_customer_count;
-    merged[name].create_date         = cb.create_date  ?? null;
-    merged[name].renewal_date        = cb.renewal_date ?? null;
-    // Live Chargebee ARR always wins when the account has billing data —
-    // the CSV's arr column is a manually-maintained snapshot and only
-    // serves as a fallback for accounts not yet found in Chargebee.
-    merged[name].arr = cb.arr ?? 0;
-  }
+  const mergedValues = Object.values(merged);
+  console.log(`Chargebee accounts loaded: ${mergedValues.length} (${
+    mergedValues.filter(a => a.is_managed).length
+  } managed, ${
+    mergedValues.filter(a => !a.is_managed).length
+  } unmanaged)`);
 
   // Merge Metabase (auto columns)
   // Keys here are the TARGET field names (after columnMap renaming).
@@ -420,7 +420,7 @@ async function main() {
   const hangingMbAccounts = [];
   for (const [name, mb] of Object.entries(mbMap)) {
     if (!merged[name]) {
-      hangingMbAccounts.push(name); // in Metabase but not in CSV seed
+      hangingMbAccounts.push(name); // in Metabase but not matched to a Chargebee account
       continue;
     }
     for (const key of MB_AUTO_KEYS) {
@@ -429,11 +429,11 @@ async function main() {
   }
 
   if (hangingMbAccounts.length > 0) {
-    console.warn(`\n⚠️  HANGING METABASE ACCOUNTS (${hangingMbAccounts.length}) — present in Metabase but missing from CSV seed:`);
+    console.warn(`\n⚠️  HANGING METABASE ACCOUNTS (${hangingMbAccounts.length}) — present in Metabase but not matched to a Chargebee customer:`);
     for (const name of hangingMbAccounts) {
       console.warn(`   • ${name}`);
     }
-    console.warn('   → Add these to the AM assignments CSV or check for name normalisation mismatches.\n');
+    console.warn('   → Check for a company-name mismatch between Metabase and Chargebee (normalizeName() may need a special case), or the account genuinely has no active Chargebee subscription.\n');
   }
 
   // ── 4. Build NPS per-account summary for merged map ──────────

@@ -8,13 +8,13 @@
 // customer/subscription object (as a `cf_*` key, null if unset for that
 // record), so there's no need to guess field names one at a time. This
 // pulls a sample of real customers + subscriptions, collects every distinct
-// `cf_*` key it sees, and prints a few sample values for each — so you can
-// eyeball which one holds the AM assignment (e.g. cf_account_manager,
-// cf_am_owner, cf_cs_owner, ...).
+// `cf_*` key it sees, and prints a frequency breakdown of the values on each
+// — a plain "first 5 samples" list can coincidentally show the same value
+// 5 times and hide that other real values exist further in.
 //
 // Usage:
 //   CHARGEBEE_API_KEY=xxx node scripts/find-chargebee-am-field.js
-//   CHARGEBEE_API_KEY=xxx node scripts/find-chargebee-am-field.js --pages 5
+//   CHARGEBEE_API_KEY=xxx node scripts/find-chargebee-am-field.js --pages 10
 // ============================================================
 
 const CHARGEBEE_SITE = 'higherme';
@@ -28,7 +28,7 @@ async function main() {
   }
 
   const pagesArg = process.argv.indexOf('--pages');
-  const maxPages = pagesArg !== -1 ? Number(process.argv[pagesArg + 1]) || 1 : 2;
+  const maxPages = pagesArg !== -1 ? Number(process.argv[pagesArg + 1]) || 1 : 10;
 
   console.log(`Scanning ${maxPages} page(s) of customers and subscriptions (${PAGE_SIZE}/page)...\n`);
 
@@ -87,9 +87,22 @@ function reportCustomFields(label, items) {
 
   for (const key of [...fieldKeys].sort()) {
     const withValue = items.filter(i => i[key] !== null && i[key] !== undefined && i[key] !== '');
-    const samples = withValue.slice(0, 5).map(i => JSON.stringify(i[key]));
-    console.log(`  ${key}  (set on ${withValue.length}/${items.length})`);
-    if (samples.length) console.log(`      e.g. ${samples.join(', ')}`);
+
+    // Frequency breakdown rather than the first few raw samples — a handful
+    // of samples can all coincidentally be the same value (e.g. a default
+    // placeholder like "Unassigned") and hide that other real values exist.
+    const counts = new Map();
+    for (const i of withValue) {
+      const v = String(i[key]);
+      counts.set(v, (counts.get(v) || 0) + 1);
+    }
+    const distinct = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+
+    console.log(`  ${key}  (set on ${withValue.length}/${items.length}, ${distinct.length} distinct value${distinct.length === 1 ? '' : 's'})`);
+    for (const [value, count] of distinct.slice(0, 10)) {
+      console.log(`      ${count.toString().padStart(4)}  ${JSON.stringify(value)}`);
+    }
+    if (distinct.length > 10) console.log(`      ... and ${distinct.length - 10} more distinct value(s)`);
   }
   console.log('');
 }
