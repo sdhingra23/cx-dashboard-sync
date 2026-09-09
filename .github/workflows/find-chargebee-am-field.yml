@@ -1,0 +1,31 @@
+name: Find Chargebee AM Field
+
+# One-off diagnostic — not on a schedule. Run manually from the Actions tab
+# whenever you need to (re-)check what custom fields Chargebee exposes.
+# Output shows up in this run's job log (see the "Run script" step).
+on:
+  workflow_dispatch:
+    inputs:
+      pages:
+        description: 'How many 100-record pages to scan'
+        type: string
+        default: '2'
+
+jobs:
+  scan:
+    name: Scan Chargebee custom fields
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run script
+        env:
+          CHARGEBEE_API_KEY: ${{ secrets.CHARGEBEE_API_KEY }}
+        run: node scripts/find-chargebee-am-field.js --pages "${{ inputs.pages }}"

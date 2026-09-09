@@ -29,7 +29,7 @@ import { loadAmAssignments }                   from '../lib/am.js';
 import { computeHealthBreakdown, healthStatus, computeHireRate, computeInterviewToHireRate,
          npsBand, npsTrend, SCORE_MODEL_VERSION } from '../lib/health.js';
 import { computeFlags, FLAG_LABELS, URGENT_FLAGS } from '../lib/flags.js';
-import { postFlagAlert, postEscalationAlert }   from '../lib/slack.js';
+import { postAccountFlagAlert, postEscalationAlert } from '../lib/slack.js';
 import {
   upsertAccounts,
   saveSnapshots,
@@ -235,9 +235,14 @@ const METABASE_QUESTIONS = {
   },
 };
 
-const DASHBOARD_BASE = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'https://your-dashboard.vercel.app'; // fallback; set VERCEL_URL secret
+// DASHBOARD_URL is a GitHub Actions secret set to the production Vercel
+// domain — deliberately not named VERCEL_URL, which is a variable Vercel
+// itself injects automatically at build/runtime with a different meaning
+// (the current deployment's own unique URL), so reusing that name here was
+// silently reading an unset secret and falling back to the placeholder.
+const DASHBOARD_BASE = process.env.DASHBOARD_URL
+  ? `https://${process.env.DASHBOARD_URL.replace(/^https?:\/\//, '')}`
+  : 'https://cx-dashboard-sync.vercel.app';
 
 const TODAY     = new Date().toISOString().split('T')[0];
 // One timestamp for the whole run — deleteStaleLocations() prunes any row
@@ -722,6 +727,10 @@ async function main() {
     renewal_date:                acc.renewal_date                ?? null,
     health_score:                acc.health_score                ?? null,
     health_status:               acc.health_status               ?? null,
+    // Written explicitly (not just relied on as "omitted column survives the
+    // upsert") so this can never be nulled out by an upsert whose payload
+    // shape changes — it's re-attached from existingGutScoreByName above.
+    cx_gut_score:                acc.cx_gut_score                ?? null,
     is_zero_roi:                 acc.is_zero_roi                 ?? false,
     hire_rate:                   acc.hire_rate                   ?? null,
     interview_to_hire_rate:      acc.interview_to_hire_rate      ?? null,
@@ -864,20 +873,34 @@ async function main() {
 
   // ── 11. Post Slack alerts (urgent flags only — any day) ───────
   // Non-urgent flags are batched and posted Monday by weekly-digest.js.
-  let urgentAlertCount = 0;
-  let urgentAlertFailures = 0;
+  //
+  // Grouped by account first: an account that trips several urgent flags the
+  // same day (e.g. health score drop + renewal at risk) previously posted one
+  // Slack message per flag, paging the channel repeatedly for one account.
+  // Now every newly-triggered urgent flag for an account goes out as a single
+  // message.
+  const urgentByAccount = new Map(); // account_name -> { acc, entries: [{flagKey,label,metric}] }
   for (const { flagKey, label, acc, metric } of flagAlerts) {
     if (!URGENT_FLAGS.has(flagKey)) continue;   // non-urgent → Monday digest
     if (!acc.is_managed) continue;              // unmanaged accounts never get Slack alerts
+    if (!urgentByAccount.has(acc.account_name)) {
+      urgentByAccount.set(acc.account_name, { acc, entries: [] });
+    }
+    urgentByAccount.get(acc.account_name).entries.push({ flagKey, label, metric });
+  }
+
+  let urgentAlertCount = 0;
+  let urgentAlertFailures = 0;
+  for (const { acc, entries } of urgentByAccount.values()) {
     try {
-      await postFlagAlert(flagKey, label, acc, metric, DASHBOARD_BASE);
+      await postAccountFlagAlert(acc, entries, DASHBOARD_BASE);
       urgentAlertCount++;
     } catch (e) {
       urgentAlertFailures++;
-      console.error(`Slack alert failed for ${flagKey} / ${acc.account_name}:`, e.message);
+      console.error(`Slack alert failed for ${acc.account_name} (${entries.map(f => f.flagKey).join(', ')}):`, e.message);
     }
   }
-  console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} posted to Slack (urgent + managed), ${urgentAlertFailures} failed`);
+  console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} Slack messages posted for ${urgentByAccount.size} accounts (urgent + managed), ${urgentAlertFailures} failed`);
 
   // ── 12. Post Slack alerts for newly added escalation notes ───
   // Escalations are written to Supabase by the dashboard when an AM adds a note.

@@ -17,13 +17,14 @@
 // in sync.js on the day they fire — they do NOT appear here.
 // ============================================================
 
-import { getSnapshotRange, getAllAccounts } from '../lib/supabase.js';
-import { postWeeklyDigest, postFlagAlert }  from '../lib/slack.js';
-import { WEEKLY_FLAGS, FLAG_LABELS }        from '../lib/flags.js';
+import { getSnapshotRange, getAllAccounts }        from '../lib/supabase.js';
+import { postWeeklyDigest, postAccountFlagAlert }  from '../lib/slack.js';
+import { WEEKLY_FLAGS, FLAG_LABELS }               from '../lib/flags.js';
 
-const DASHBOARD_BASE = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'https://your-dashboard.vercel.app';
+// See scripts/sync.js for why this reads DASHBOARD_URL rather than VERCEL_URL.
+const DASHBOARD_BASE = process.env.DASHBOARD_URL
+  ? `https://${process.env.DASHBOARD_URL.replace(/^https?:\/\//, '')}`
+  : 'https://cx-dashboard-sync.vercel.app';
 
 async function main() {
   console.log('=== Weekly Digest START ===');
@@ -125,30 +126,37 @@ async function main() {
     }
   }
 
-  let weeklyFlagCount = 0;
+  // One Slack message per account, listing every non-urgent flag it newly
+  // tripped this week — an account crossing several thresholds in the same
+  // week previously fired a separate message per flag.
+  let weeklyFlagCount   = 0;
+  let weeklyAccountCount = 0;
   for (const acc of accounts) {
     if (!acc.is_managed) continue;              // unmanaged accounts never get Slack alerts
     const thisSnap = latestThisWeek[acc.account_name];
     const prevSnap = latestPrevWeek[acc.account_name];
     if (!thisSnap) continue;
 
+    const entries = [];
     for (const flagKey of WEEKLY_FLAGS) {
       const isTrueNow   = Boolean(thisSnap[flagKey]);
       const wasTrueLast = Boolean(prevSnap?.[flagKey]);
       if (!isTrueNow || wasTrueLast) continue; // not newly triggered
 
-      const label  = FLAG_LABELS[flagKey];
-      const metric = weeklyFlagNote(flagKey, acc);
-      try {
-        await postFlagAlert(flagKey, label, acc, metric, DASHBOARD_BASE);
-        weeklyFlagCount++;
-      } catch (e) {
-        console.error(`Weekly flag alert failed for ${flagKey} / ${acc.account_name}:`, e.message);
-      }
+      entries.push({ flagKey, label: FLAG_LABELS[flagKey], metric: weeklyFlagNote(flagKey, acc) });
+    }
+    if (entries.length === 0) continue;
+
+    try {
+      await postAccountFlagAlert(acc, entries, DASHBOARD_BASE);
+      weeklyFlagCount += entries.length;
+      weeklyAccountCount++;
+    } catch (e) {
+      console.error(`Weekly flag alert failed for ${acc.account_name} (${entries.map(f => f.flagKey).join(', ')}):`, e.message);
     }
   }
 
-  console.log(`Weekly flags posted: ${weeklyFlagCount}`);
+  console.log(`Weekly flags posted: ${weeklyFlagCount} across ${weeklyAccountCount} Slack messages`);
   console.log('=== Weekly Digest END ===');
 }
 

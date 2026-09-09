@@ -1147,7 +1147,18 @@
         else loadAMPortfolio(sel);
     }
 
+    // Keeps the URL's ?account= param in sync with what's on screen, so the
+    // address bar is always a valid deep link back to the current view (the
+    // same param Slack alert links use) rather than sitting on the base URL.
+    function updateUrlAccount(id) {
+        const params = new URLSearchParams(window.location.search);
+        if (id) params.set('account', id); else params.delete('account');
+        const qs = params.toString();
+        history.replaceState(null, '', qs ? `?${qs}` : window.location.pathname);
+    }
+
     function navigateBack() {
+        updateUrlAccount(null);
         if (!document.getElementById('dashboardContent').classList.contains('hidden')) {
             if (document.getElementById('brandSelect').value !== '') loadBrandDashboard(document.getElementById('brandSelect').value);
             else if (document.getElementById('aeSelect').value !== '' && document.getElementById('aeSelect').value !== 'VP') loadAMPortfolio(document.getElementById('aeSelect').value);
@@ -1669,6 +1680,7 @@
         // Locations load lazily per account; reset the tab's filters so the
         // previous account's search/sort doesn't carry over.
         currentAccountId = accountId;
+        updateUrlAccount(accountId);
         currentLocations = [];
         document.getElementById('locSearch').value = '';
         locSort     = { col: 'total_apps_30d', asc: false };
