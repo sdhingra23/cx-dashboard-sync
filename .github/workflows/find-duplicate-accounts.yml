@@ -21,5 +21,8 @@ jobs:
 
       - name: Run script
         env:
-          CHARGEBEE_API_KEY: ${{ secrets.CHARGEBEE_API_KEY }}
+          CHARGEBEE_API_KEY:   ${{ secrets.CHARGEBEE_API_KEY }}
+          METABASE_BASE_URL:   ${{ secrets.METABASE_BASE_URL }}
+          METABASE_USER:       ${{ secrets.METABASE_USER }}
+          METABASE_PASS:       ${{ secrets.METABASE_PASS }}
         run: node scripts/find-duplicate-accounts.js

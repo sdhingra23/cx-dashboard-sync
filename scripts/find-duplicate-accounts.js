@@ -31,13 +31,29 @@
 //     location-suffix patterns and re-groups to surface prefix-sharing
 //     candidates. Heuristic — every group needs a human eyeball, since a
 //     company whose real name ends in a number would false-positive here.
+//  5. Real-data check (needs Metabase creds too): for every group found in
+//     2/4, cross-references each member's name against Metabase Q1513
+//     (location drill-down — locations, published jobs, applications) to
+//     see whether one member is a real, active customer and the other is
+//     an empty shell with no product data behind it at all. If a group is
+//     "one has data, one doesn't," the empty one is very likely just a
+//     stray Chargebee record, not a real second account — a much more
+//     direct signal than ID shape or name pattern-matching.
 //
 // For every candidate group, reports each member's raw name, Chargebee
 // customer ID, ARR, and whether the ID is numeric or Chargebee-generated.
 //
 // Usage:
 //   CHARGEBEE_API_KEY=xxx node scripts/find-duplicate-accounts.js
+//
+//   # Also runs the Metabase real-data check (step 5):
+//   CHARGEBEE_API_KEY=xxx METABASE_BASE_URL=xxx METABASE_USER=xxx METABASE_PASS=xxx \
+//     node scripts/find-duplicate-accounts.js
 // ============================================================
+
+import { mbGetSession, mbRunQuestion } from '../lib/metabase.js';
+import { LOCATION_QUESTION_ID } from '../lib/locations.js';
+import { normalizeName } from '../lib/normalize.js';
 
 const CHARGEBEE_SITE = 'higherme';
 const PAGE_SIZE = 100;
@@ -173,6 +189,68 @@ async function main() {
     }
     console.log('');
   }
+
+  // ── 5. Real-data check against Metabase Q1513 (location drill-down) ────
+  const mbUser = process.env.METABASE_USER;
+  const mbPass = process.env.METABASE_PASS;
+  const allCandidateGroups = [...dupGroups, ...suffixCandidates];
+
+  console.log('── Real-data check (Metabase Q1513 location drill-down) ─────');
+  if (!mbUser || !mbPass) {
+    console.log('  Skipped — set METABASE_BASE_URL/METABASE_USER/METABASE_PASS to run this check.');
+    console.log('');
+    return;
+  }
+  if (allCandidateGroups.length === 0) {
+    console.log('  No candidate groups to check (steps 2/4 found nothing).');
+    console.log('');
+    return;
+  }
+
+  console.log('  Authenticating to Metabase...');
+  const mbToken = await mbGetSession();
+  console.log(`  Fetching Q${LOCATION_QUESTION_ID} location rows (full book — can take a bit)...`);
+  const locationRows = await mbRunQuestion(LOCATION_QUESTION_ID, mbToken);
+  console.log(`  ${locationRows.length} location rows fetched.\n`);
+
+  // Index by normalized account_name AND company_name — Q1513 exposes both,
+  // and we don't know for certain which one a given customer's company name
+  // would match, so check either.
+  // A Set of keys per row (not a plain loop over both columns) so a row
+  // whose account_name and company_name are identical — the common case —
+  // gets indexed once per key, not pushed twice into the same bucket and
+  // double-counted in the job/app sums below.
+  const locsByName = new Map();
+  for (const row of locationRows) {
+    const map = keyMap(row);
+    const keys = new Set(
+      ['account_name', 'company_name']
+        .map(col => normalizeName(get(row, map, col)))
+        .filter(Boolean)
+        .map(n => n.trim().toLowerCase())
+    );
+    for (const key of keys) {
+      if (!locsByName.has(key)) locsByName.set(key, []);
+      locsByName.get(key).push(row);
+    }
+  }
+
+  for (const members of allCandidateGroups.sort((a, b) => b.length - a.length)) {
+    console.log(`  "${members[0]._rawName}" family:`);
+    for (const m of members) {
+      const key  = m._rawName.trim().toLowerCase();
+      const locs = locsByName.get(key) || [];
+      const publishedJobs = locs.reduce((s, r) => s + toInt(get(r, keyMap(r), 'published_jobs')), 0);
+      const apps30d = locs.reduce((s, r) =>
+        s + toInt(get(r, keyMap(r), 'indeed_apps_30d')) + toInt(get(r, keyMap(r), 'signage_apps_30d')), 0);
+      const hasData = locs.length > 0 && (publishedJobs > 0 || apps30d > 0);
+      const flag = locs.length === 0
+        ? '⚠️  NO LOCATIONS MATCHED (name mismatch, or genuinely no product data)'
+        : hasData ? '✓ has real product data' : '⚠️  locations exist but zero jobs/apps — looks like a dead shell';
+      console.log(`      id=${m.id.padEnd(20)} name="${m._rawName}"  locations=${locs.length}  publishedJobs=${publishedJobs}  apps30d=${apps30d}  ${flag}`);
+    }
+    console.log('');
+  }
 }
 
 async function fetchAllActiveCustomers(apiKey) {
@@ -193,6 +271,27 @@ async function fetchAllActiveCustomers(apiKey) {
 
 function isNumericId(id) {
   return /^\d+$/.test(String(id));
+}
+
+// Same tolerant column lookup lib/locations.js uses internally (not
+// exported from there) — Metabase can return a question's columns as
+// display names ("Account Name") rather than raw names ("account_name").
+function keyMap(row) {
+  return Object.keys(row).reduce((m, k) => {
+    m[k.toLowerCase().replace(/\s+/g, '_')] = k;
+    return m;
+  }, {});
+}
+
+function get(row, map, col) {
+  const key = map[col];
+  return key === undefined ? null : row[key];
+}
+
+function toInt(val) {
+  if (val === null || val === undefined || val === '') return 0;
+  const n = Number(String(val).replace(/[,\s$]/g, ''));
+  return Number.isFinite(n) ? Math.round(n) : 0;
 }
 
 // Case-fold, normalize curly quotes to straight, strip common legal
