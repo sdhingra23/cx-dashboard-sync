@@ -196,61 +196,135 @@ async function main() {
   const allCandidateGroups = [...dupGroups, ...suffixCandidates];
 
   console.log('── Real-data check (Metabase Q1513 location drill-down) ─────');
+  let locsByName = null;
   if (!mbUser || !mbPass) {
     console.log('  Skipped — set METABASE_BASE_URL/METABASE_USER/METABASE_PASS to run this check.');
-    console.log('');
-    return;
-  }
-  if (allCandidateGroups.length === 0) {
+    console.log('  (Step 6 below will fall back to ID-shape only, which is less confident.)');
+  } else if (allCandidateGroups.length === 0) {
     console.log('  No candidate groups to check (steps 2/4 found nothing).');
-    console.log('');
-    return;
+  } else {
+    console.log('  Authenticating to Metabase...');
+    const mbToken = await mbGetSession();
+    console.log(`  Fetching Q${LOCATION_QUESTION_ID} location rows (full book — can take a bit)...`);
+    const locationRows = await mbRunQuestion(LOCATION_QUESTION_ID, mbToken);
+    console.log(`  ${locationRows.length} location rows fetched.\n`);
+
+    // Index by normalized account_name AND company_name — Q1513 exposes both,
+    // and we don't know for certain which one a given customer's company name
+    // would match, so check either.
+    // A Set of keys per row (not a plain loop over both columns) so a row
+    // whose account_name and company_name are identical — the common case —
+    // gets indexed once per key, not pushed twice into the same bucket and
+    // double-counted in the job/app sums below.
+    locsByName = new Map();
+    for (const row of locationRows) {
+      const map = keyMap(row);
+      const keys = new Set(
+        ['account_name', 'company_name']
+          .map(col => normalizeName(get(row, map, col)))
+          .filter(Boolean)
+          .map(n => n.trim().toLowerCase())
+      );
+      for (const key of keys) {
+        if (!locsByName.has(key)) locsByName.set(key, []);
+        locsByName.get(key).push(row);
+      }
+    }
+
+    for (const members of allCandidateGroups.sort((a, b) => b.length - a.length)) {
+      console.log(`  "${members[0]._rawName}" family:`);
+      for (const m of members) {
+        const status = memberDataStatus(m, locsByName);
+        const flag = status.locs === 0
+          ? '⚠️  NO LOCATIONS MATCHED (name mismatch, or genuinely no product data)'
+          : status.hasData ? '✓ has real product data' : '⚠️  locations exist but zero jobs/apps — looks like a dead shell';
+        console.log(`      id=${m.id.padEnd(20)} name="${m._rawName}"  locations=${status.locs}  publishedJobs=${status.publishedJobs}  apps30d=${status.apps30d}  ${flag}`);
+      }
+      console.log('');
+    }
   }
+  console.log('');
 
-  console.log('  Authenticating to Metabase...');
-  const mbToken = await mbGetSession();
-  console.log(`  Fetching Q${LOCATION_QUESTION_ID} location rows (full book — can take a bit)...`);
-  const locationRows = await mbRunQuestion(LOCATION_QUESTION_ID, mbToken);
-  console.log(`  ${locationRows.length} location rows fetched.\n`);
+  // ── 6. ARR impact: what changes if the likely duplicates are excluded? ──
+  // For every candidate group, decides which member(s) to treat as the
+  // likely stray duplicate, in order of confidence:
+  //   1. Real-data split (from step 5): some members have product data,
+  //      some don't → exclude the no-data ones. Highest confidence.
+  //   2. ID-shape split: mixed numeric/auto-generated IDs → exclude the
+  //      auto-generated ones. Medium confidence (correlation, not proof).
+  //   3. Neither signal splits the group → exclude everyone but the
+  //      highest-ARR member, flagged LOW CONFIDENCE. This is a guess, not
+  //      a finding — reviewed manually before trusting.
+  // This does NOT change the dashboard or Chargebee — it only recomputes
+  // the ARR total so you can compare it against a known-correct number.
+  console.log('── ARR impact if likely duplicates are excluded ─────────────');
 
-  // Index by normalized account_name AND company_name — Q1513 exposes both,
-  // and we don't know for certain which one a given customer's company name
-  // would match, so check either.
-  // A Set of keys per row (not a plain loop over both columns) so a row
-  // whose account_name and company_name are identical — the common case —
-  // gets indexed once per key, not pushed twice into the same bucket and
-  // double-counted in the job/app sums below.
-  const locsByName = new Map();
-  for (const row of locationRows) {
-    const map = keyMap(row);
-    const keys = new Set(
-      ['account_name', 'company_name']
-        .map(col => normalizeName(get(row, map, col)))
-        .filter(Boolean)
-        .map(n => n.trim().toLowerCase())
-    );
-    for (const key of keys) {
-      if (!locsByName.has(key)) locsByName.set(key, []);
-      locsByName.get(key).push(row);
+  const totalArrAll = paying.reduce((s, c) => s + (c.mrr || 0) / 100 * 12, 0);
+  const excluded = new Map(); // customer id -> { member, reason, confidence }
+
+  for (const members of allCandidateGroups) {
+    if (members.length < 2) continue;
+
+    // 1. Real-data split
+    if (locsByName) {
+      const statuses = members.map(m => ({ m, ...memberDataStatus(m, locsByName) }));
+      const withData = statuses.filter(s => s.hasData);
+      const withoutData = statuses.filter(s => !s.hasData);
+      if (withData.length > 0 && withoutData.length > 0) {
+        for (const s of withoutData) {
+          excluded.set(s.m.id, { member: s.m, reason: 'no product data in Metabase', confidence: 'HIGH' });
+        }
+        continue;
+      }
+    }
+
+    // 2. ID-shape split
+    const numeric = members.filter(m => isNumericId(m.id));
+    const autoGen = members.filter(m => !isNumericId(m.id));
+    if (numeric.length > 0 && autoGen.length > 0) {
+      for (const m of autoGen) {
+        excluded.set(m.id, { member: m, reason: 'auto-generated Chargebee ID (numeric sibling exists)', confidence: 'MEDIUM' });
+      }
+      continue;
+    }
+
+    // 3. No signal splits the group — guess by ARR, flagged low confidence
+    const sorted = [...members].sort((a, b) => (b.mrr || 0) - (a.mrr || 0));
+    for (const m of sorted.slice(1)) {
+      excluded.set(m.id, { member: m, reason: 'ambiguous — lower ARR than its sibling', confidence: 'LOW — verify manually' });
     }
   }
 
-  for (const members of allCandidateGroups.sort((a, b) => b.length - a.length)) {
-    console.log(`  "${members[0]._rawName}" family:`);
-    for (const m of members) {
-      const key  = m._rawName.trim().toLowerCase();
-      const locs = locsByName.get(key) || [];
-      const publishedJobs = locs.reduce((s, r) => s + toInt(get(r, keyMap(r), 'published_jobs')), 0);
-      const apps30d = locs.reduce((s, r) =>
-        s + toInt(get(r, keyMap(r), 'indeed_apps_30d')) + toInt(get(r, keyMap(r), 'signage_apps_30d')), 0);
-      const hasData = locs.length > 0 && (publishedJobs > 0 || apps30d > 0);
-      const flag = locs.length === 0
-        ? '⚠️  NO LOCATIONS MATCHED (name mismatch, or genuinely no product data)'
-        : hasData ? '✓ has real product data' : '⚠️  locations exist but zero jobs/apps — looks like a dead shell';
-      console.log(`      id=${m.id.padEnd(20)} name="${m._rawName}"  locations=${locs.length}  publishedJobs=${publishedJobs}  apps30d=${apps30d}  ${flag}`);
+  const excludedList = [...excluded.values()];
+  const excludedArr = excludedList.reduce((s, x) => s + (x.member.mrr || 0) / 100 * 12, 0);
+  const totalArrFiltered = totalArrAll - excludedArr;
+
+  console.log(`  All paying customers:        ${paying.length} accounts, $${totalArrAll.toFixed(0)} ARR`);
+  console.log(`  Likely duplicates excluded:  ${excludedList.length} accounts, -$${excludedArr.toFixed(0)} ARR`);
+  console.log(`  Remaining:                   ${paying.length - excludedList.length} accounts, $${totalArrFiltered.toFixed(0)} ARR`);
+  console.log('');
+  if (excludedList.length > 0) {
+    console.log('  Excluded records:');
+    for (const { member: m, reason, confidence } of excludedList.sort((a, b) => (b.member.mrr || 0) - (a.member.mrr || 0))) {
+      const arr = ((m.mrr || 0) / 100 * 12).toFixed(0);
+      console.log(`    [${confidence.padEnd(20)}] id=${m.id.padEnd(20)} name="${m._rawName}"  ARR=$${arr}  — ${reason}`);
     }
-    console.log('');
   }
+  console.log('');
+  console.log('  Compare "Remaining" ARR above against your known-correct number.');
+  console.log('  LOW-confidence exclusions are guesses — verify those specific records');
+  console.log('  in Chargebee before treating this as final.');
+}
+
+// Shared by steps 5 and 6 — looks up a candidate member's real product data
+// (locations, published jobs, applications) from the Q1513 index.
+function memberDataStatus(m, locsByName) {
+  const key = m._rawName.trim().toLowerCase();
+  const locs = locsByName.get(key) || [];
+  const publishedJobs = locs.reduce((s, r) => s + toInt(get(r, keyMap(r), 'published_jobs')), 0);
+  const apps30d = locs.reduce((s, r) =>
+    s + toInt(get(r, keyMap(r), 'indeed_apps_30d')) + toInt(get(r, keyMap(r), 'signage_apps_30d')), 0);
+  return { locs: locs.length, publishedJobs, apps30d, hasData: locs.length > 0 && (publishedJobs > 0 || apps30d > 0) };
 }
 
 async function fetchAllActiveCustomers(apiKey) {
