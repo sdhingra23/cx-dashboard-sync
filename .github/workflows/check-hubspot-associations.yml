@@ -1,0 +1,24 @@
+name: Check HubSpot Associations
+
+# One-off diagnostic — not on a schedule. Run manually from the Actions tab.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Verify HM Account -> HM Company -> Location linking
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run script
+        env:
+          HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
+        run: node scripts/check-hubspot-associations.js
