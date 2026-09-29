@@ -663,37 +663,55 @@ async function main() {
   // Built here rather than at the upsert step because the health score's
   // readiness factor reads these aggregates; the same rows are written to
   // Supabase later without being rebuilt.
+  //
+  // HubSpot is primary, Metabase (Q1513) is enrichment-only — reversed from
+  // the original Metabase-primary design. A location's account attribution
+  // now comes from HubSpot's own Location→Company→Account association
+  // chain (exact, no name involved), not from matching Metabase's own
+  // account_name string against the dashboard's account universe. Metabase
+  // still supplies the operational fields (published_jobs, total_apps_30d,
+  // boosts, indeed status, chats, screenings) HubSpot doesn't have, joined
+  // by the exact numeric location_id both systems share — also no name
+  // matching. Metabase's account_name only gets used as a last-resort
+  // fallback, for a location_id HubSpot has never heard of at all; even
+  // then, a mismatch just drops that one location rather than corrupting
+  // an otherwise-correct HubSpot-anchored row.
   let locationRows = [];
-  try {
-    const built = buildLocationRows(rawLocationRows, new Set(Object.keys(merged)), SYNCED_AT);
-    locationRows = built.rows;
-    if (built.skippedNoId > 0) {
-      console.warn(`Locations: skipped ${built.skippedNoId} row(s) with no location_id or account_name.`);
-    }
-    if (built.skippedUnknownAccount.length > 0) {
-      console.warn(`Locations: skipped rows for ${built.skippedUnknownAccount.length} account(s) not on the dashboard — ${built.skippedUnknownAccount.slice(0, 10).join(', ')}${built.skippedUnknownAccount.length > 10 ? ', …' : ''}`);
-    }
-    const locConfig = buildLocationConfigByAccount(locationRows);
-    for (const [name, cfg] of Object.entries(locConfig)) {
-      if (merged[name]) Object.assign(merged[name], cfg);
-    }
-    console.log(`Locations: ${locationRows.length} rows, config aggregates for ${Object.keys(locConfig).length} accounts`);
-  } catch (e) {
-    console.error('Location row build failed (health readiness falls back to job-level config):', e.message);
-  }
+  let hsLocPrimary = 0, hsLocSkippedNoAccount = 0, hsLocSkippedInactive = 0;
+  const hsLocationIds = new Set();
 
-  // Merge in HubSpot's funnel/status data by location_id — the same numeric
-  // ID space Metabase's Q1513 already uses. Existing rows get the funnel
-  // columns added; a location HubSpot knows about that Metabase doesn't
-  // (or vice versa) still gets a row, since either source can lag the other.
-  const locationRowsById = new Map(locationRows.map(r => [r.location_id, r]));
-  let hsLocMerged = 0, hsLocAdded = 0, hsLocSkippedNoAccount = 0, hsLocSkippedInactive = 0;
   for (const hl of hubspotData.locations) {
     if (hl.location_id == null) continue;
+    hsLocationIds.add(hl.location_id);
+
     const accountName = normalizeName(hl.account_name);
     if (!accountName || !merged[accountName]) { hsLocSkippedNoAccount++; continue; }
 
-    const funnelFields = {
+    // HubSpot never deletes a Location record — a closed one is kept
+    // forever, just marked Paused/Deleted/Churned, for history (see the
+    // Project Unified spec). Only build a primary row for one that's
+    // actually live; a nameless "Active" record is a stub, not a real
+    // current location (verified: every one of 40 such rows on one account
+    // had a null name) — both patterns previously inflated an account's
+    // location count well past its real, current total (449 vs. 361 for
+    // one reported account).
+    if ((hl.status || '').toLowerCase() !== 'active' || !hl.location_name) {
+      hsLocSkippedInactive++;
+      continue;
+    }
+
+    locationRows.push({
+      location_id: hl.location_id, account_id: null, account_name: accountName,
+      company_name: null, location_name: hl.location_name,
+      // Metabase-native operational fields — left at their "no data yet"
+      // defaults; the enrichment pass below fills these in when Q1513 has
+      // a matching row, by location_id, not by name.
+      boosts_30d: 0, has_boosted_30d: false, published_jobs: 0, jobs_no_salary: 0,
+      signage_apps_30d: 0, indeed_status: null, indeed_apps_30d: 0, total_apps_30d: 0,
+      screenings_requested_30d: 0, screenings_completed_30d: 0, screenings_expired_30d: 0,
+      total_chats_30d: 0, chats_employer_replied_30d: 0, two_way_chats_30d: 0,
+      last_synced: SYNCED_AT,
+
       hs_status:                      hl.status,
       hs_paused_at:                   hl.paused_at,
       hs_churned_at:                  hl.churned_at,
@@ -720,46 +738,74 @@ async function main() {
       funnel_pending_onboarding_30d:  hl.funnel_pending_onboarding_30d,
       funnel_future_candidate_30d:    hl.funnel_future_candidate_30d,
       funnel_with_video_30d:          hl.funnel_with_video_30d,
-    };
-
-    const existing = locationRowsById.get(hl.location_id);
-    if (existing) {
-      Object.assign(existing, funnelFields);
-      hsLocMerged++;
-    } else if ((hl.status || '').toLowerCase() !== 'active') {
-      // HubSpot never deletes a Location record — a closed one is kept
-      // forever, just marked Paused/Deleted/Churned, for history (see the
-      // Project Unified spec). A HubSpot-only row therefore isn't
-      // necessarily a *current* location Metabase missed; it's often a
-      // historical one Metabase correctly never had. Adding it unfiltered
-      // inflated an account's location count well past its real, current
-      // total (e.g. 449 vs. the correct 361 for one account) — only add a
-      // HubSpot-only row when it's actually live.
-      hsLocSkippedInactive++;
-    } else if (!hl.location_name) {
-      // Status alone wasn't enough — some HubSpot-only Locations marked
-      // "Active" still had no location_name at all (verified: every one of
-      // 40 extra rows on one account had a null name), a pattern real,
-      // current locations don't share. Treat a nameless "Active" record as
-      // a stub rather than a real current location.
-      hsLocSkippedInactive++;
-    } else {
-      const newRow = {
-        location_id: hl.location_id, account_id: null, account_name: accountName,
-        company_name: null, location_name: hl.location_name || null,
-        boosts_30d: 0, has_boosted_30d: false, published_jobs: 0, jobs_no_salary: 0,
-        signage_apps_30d: 0, indeed_status: null, indeed_apps_30d: 0, total_apps_30d: 0,
-        screenings_requested_30d: 0, screenings_completed_30d: 0, screenings_expired_30d: 0,
-        total_chats_30d: 0, chats_employer_replied_30d: 0, two_way_chats_30d: 0,
-        last_synced: SYNCED_AT,
-        ...funnelFields,
-      };
-      locationRows.push(newRow);
-      locationRowsById.set(hl.location_id, newRow);
-      hsLocAdded++;
-    }
+    });
+    hsLocPrimary++;
   }
-  console.log(`HubSpot location funnel: merged into ${hsLocMerged} existing row(s), added ${hsLocAdded} new row(s), skipped ${hsLocSkippedNoAccount} (account not in universe) + ${hsLocSkippedInactive} (HubSpot-only, not Active)`);
+  console.log(`HubSpot locations: ${hsLocPrimary} primary row(s), skipped ${hsLocSkippedNoAccount} (account not in universe) + ${hsLocSkippedInactive} (not Active/unnamed)`);
+
+  const locationRowsById = new Map(locationRows.map(r => [r.location_id, r]));
+  let mbMerged = 0, mbAddedFallback = 0, mbSkippedHsInactive = 0;
+  try {
+    // knownNames stays permissive here (no filtering by it) — the fallback
+    // branch below re-checks merged[] itself, and the enrichment branch
+    // doesn't need it at all since it joins by location_id.
+    const built = buildLocationRows(rawLocationRows, new Set(), SYNCED_AT);
+    if (built.skippedNoId > 0) {
+      console.warn(`Locations: skipped ${built.skippedNoId} Metabase row(s) with no location_id or account_name.`);
+    }
+
+    for (const mbRow of built.rows) {
+      const existing = locationRowsById.get(mbRow.location_id);
+      if (existing) {
+        // Enrichment only — location_id is the join key, so this never
+        // depends on Metabase's account_name matching anything.
+        Object.assign(existing, {
+          company_name:               mbRow.company_name,
+          location_name:              mbRow.location_name || existing.location_name,
+          boosts_30d:                 mbRow.boosts_30d,
+          last_boost_at:              mbRow.last_boost_at,
+          has_boosted_30d:            mbRow.has_boosted_30d,
+          published_jobs:             mbRow.published_jobs,
+          jobs_no_salary:             mbRow.jobs_no_salary,
+          signage_apps_30d:           mbRow.signage_apps_30d,
+          last_signage_app_at:        mbRow.last_signage_app_at,
+          indeed_status:              mbRow.indeed_status,
+          indeed_apps_30d:            mbRow.indeed_apps_30d,
+          last_indeed_app_at:         mbRow.last_indeed_app_at,
+          total_apps_30d:             mbRow.total_apps_30d,
+          screenings_requested_30d:   mbRow.screenings_requested_30d,
+          screenings_completed_30d:   mbRow.screenings_completed_30d,
+          screenings_expired_30d:     mbRow.screenings_expired_30d,
+          total_chats_30d:            mbRow.total_chats_30d,
+          chats_employer_replied_30d: mbRow.chats_employer_replied_30d,
+          two_way_chats_30d:          mbRow.two_way_chats_30d,
+        });
+        mbMerged++;
+      } else if (hsLocationIds.has(mbRow.location_id)) {
+        // HubSpot knows this location but says it's not currently active —
+        // its explicit status wins over Metabase's potentially-stale data,
+        // same reasoning as the primary-row filter above.
+        mbSkippedHsInactive++;
+      } else if (merged[mbRow.account_name]) {
+        // HubSpot has never heard of this location_id at all — fall back to
+        // Metabase's own row. This is the one path still keyed by a
+        // name-match (mbRow.account_name is already normalizeName()'d by
+        // buildLocationRows), used only when HubSpot has no opinion.
+        locationRows.push(mbRow);
+        locationRowsById.set(mbRow.location_id, mbRow);
+        mbAddedFallback++;
+      }
+    }
+    console.log(`Metabase locations: merged into ${mbMerged} HubSpot row(s) by location_id, added ${mbAddedFallback} fallback row(s) (not in HubSpot at all), skipped ${mbSkippedHsInactive} (HubSpot says not Active)`);
+
+    const locConfig = buildLocationConfigByAccount(locationRows);
+    for (const [name, cfg] of Object.entries(locConfig)) {
+      if (merged[name]) Object.assign(merged[name], cfg);
+    }
+    console.log(`Locations: ${locationRows.length} rows, config aggregates for ${Object.keys(locConfig).length} accounts`);
+  } catch (e) {
+    console.error('Location row build failed (health readiness falls back to job-level config):', e.message);
+  }
 
   // Verbatim lookup: account_name → verbatims from the last 24h.
   // Built here rather than alongside the other flags because the health
