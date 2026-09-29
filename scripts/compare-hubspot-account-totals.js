@@ -93,6 +93,8 @@ async function main() {
   }
   console.log('');
 
+  let fxRates = null; // { CAD: 1.38, ... } — 1 USD = N of that currency, from open.er-api.com
+
   if (resolved.currencyCode) {
     console.log('── hm_currency_code distribution (all fetched records) ────────');
     const currencyCounts = new Map();
@@ -103,15 +105,20 @@ async function main() {
     for (const [cur, count] of [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])) {
       console.log(`  ${String(count).padStart(6)}  ${cur}`);
     }
-    const nonUsd = accounts.filter(a => {
-      const cur = (a.properties[resolved.currencyCode] || '').toUpperCase();
-      return cur && cur !== 'USD';
-    });
-    if (nonUsd.length > 0) {
-      const nonUsdMrr = nonUsd.reduce((s, a) => s + (Number(a.properties[resolved.totalMrr]) || 0), 0);
-      console.log(`  ⚠️  ${nonUsd.length} account(s) not in USD, summing $${nonUsdMrr.toFixed(0)}/mo raw —`);
-      console.log('      these are being added to the total UNCONVERTED below. Treat the');
-      console.log('      final ARR comparison as approximate until this is handled properly.');
+    const nonUsdCurrencies = [...currencyCounts.keys()].filter(c => c && c !== '(blank)' && c.toUpperCase() !== 'USD');
+    if (nonUsdCurrencies.length > 0) {
+      console.log(`  Fetching live exchange rates to convert ${nonUsdCurrencies.join(', ')} → USD...`);
+      const fx = await fetchFxRates();
+      if (fx) {
+        console.log(`  Rate source: open.er-api.com, base USD (fetched this run).`);
+        for (const cur of nonUsdCurrencies) {
+          if (fx[cur.toUpperCase()]) console.log(`    1 USD = ${fx[cur.toUpperCase()]} ${cur.toUpperCase()}`);
+          else console.log(`    ⚠️  No rate found for ${cur} — will NOT convert, contributes raw/unconverted.`);
+        }
+      } else {
+        console.log('  ⚠️  Could not fetch live rates — non-USD accounts will be summed unconverted below.');
+      }
+      fxRates = fx;
     }
     console.log('');
   } else {
@@ -129,11 +136,23 @@ async function main() {
     const status = (a.properties[resolved.chargebeeStatus] || '').toLowerCase();
     return status === 'active' || status === 'non_renewing';
   });
-  // hm_total_mrr is published in dollars, not cents — Project Unified's own
-  // spec divides the internal (cents-stored) value before publishing to
-  // HubSpot, unlike Chargebee's raw API below, which is still in cents.
-  const totalMrrDollars = active.reduce((s, a) => s + (Number(a.properties[resolved.totalMrr]) || 0), 0);
-  const totalArrHubspot = totalMrrDollars * 12;
+  // hm_total_mrr is published in the account's own currency, in dollars not
+  // cents — Project Unified's own spec divides the internal (cents-stored)
+  // value before publishing to HubSpot, unlike Chargebee's raw API below,
+  // which is still in cents (and always USD, so no conversion needed there).
+  let unconvertedCount = 0;
+  const totalMrrUsd = active.reduce((s, a) => {
+    const raw = Number(a.properties[resolved.totalMrr]) || 0;
+    const cur = (a.properties[resolved.currencyCode] || 'USD').toUpperCase();
+    if (cur === 'USD' || !cur) return s + raw;
+    const rate = fxRates?.[cur];
+    if (!rate) { unconvertedCount++; return s + raw; } // no rate available — falls back to raw, already warned above
+    return s + raw / rate;
+  }, 0);
+  const totalArrHubspot = totalMrrUsd * 12;
+  if (unconvertedCount > 0) {
+    console.log(`  (${unconvertedCount} account(s) summed unconverted — no FX rate available for their currency)\n`);
+  }
 
   console.log('── Fetching Chargebee paying customers (fresh, same run) ──────');
   const customers = await fetchAllActiveCustomers(cbKey);
@@ -181,6 +200,30 @@ async function main() {
   console.log('  1 record per name here means HM Account is genuinely collapsing that');
   console.log('  case. More than 1 means it isn\'t, for that specific case — this does not');
   console.log('  generalize to names like Tim Hortons, where multiple real records is correct.');
+  console.log('');
+
+  // ── Does an Account Manager field already exist on Subscriptions? ──────
+  // Per the spec, AM is meant to live on the existing HubSpot Subscription
+  // object (synced directly from Chargebee, independent of HM Account) —
+  // check whether that property already exists, rather than assuming.
+  console.log('── Account Manager field on the Subscription object ────────────');
+  const subSchema = await findSubscriptionSchema(hsKey);
+  if (!subSchema) {
+    console.log('  Could not find a "Subscription" object/schema via the custom-schemas API.');
+    console.log('  It may be a native HubSpot object (e.g. via a marketplace Chargebee');
+    console.log('  integration) rather than a custom object, which this check does not cover.');
+  } else {
+    console.log(`  Found "${subSchema.labels?.singular || subSchema.name}" — objectTypeId=${subSchema.objectTypeId}`);
+    const subProps = await hsRequest(hsKey, `/crm/v3/properties/${subSchema.objectTypeId}`);
+    const amProp = (subProps.results || []).find(p => (p.label || '').toLowerCase().includes('account manager'));
+    if (amProp) {
+      console.log(`  ✓ Found property: ${amProp.name} (label: "${amProp.label}")`);
+    } else {
+      console.log('  ⚠️  No property with a label containing "Account Manager" found.');
+      console.log('  Existing properties on this object:');
+      for (const p of (subProps.results || [])) console.log(`      ${p.name}  ("${p.label}")`);
+    }
+  }
 }
 
 // ── HubSpot helpers ─────────────────────────────────────────
@@ -202,6 +245,27 @@ async function findHmAccountSchema(hsKey) {
   // Fall back to anything with "account" in the label, in case the object
   // wasn't actually named with an "HM" prefix.
   return schemas.find(s => /\baccount/.test(labelOf(s)));
+}
+
+async function findSubscriptionSchema(hsKey) {
+  const res = await hsRequest(hsKey, '/crm/v3/schemas');
+  const schemas = res.results || [];
+  const labelOf = s => `${s.labels?.singular || ''} ${s.labels?.plural || ''} ${s.name || ''}`.toLowerCase();
+  return schemas.find(s => /subscription/.test(labelOf(s)));
+}
+
+// Live USD-based rates from a free, keyless API — used to convert non-USD
+// HM Account MRR to USD rather than assuming a fixed/guessed rate. Returns
+// null on any failure so callers can fall back to "unconverted, flagged."
+async function fetchFxRates() {
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.rates || null; // e.g. { CAD: 1.38, ... } — 1 USD = N of that currency
+  } catch {
+    return null;
+  }
 }
 
 async function fetchAllHsObjects(hsKey, objectType, propertyNames) {
