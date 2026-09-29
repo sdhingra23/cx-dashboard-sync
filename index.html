@@ -384,6 +384,23 @@
         .loc-chart-title { font-size:12px; font-weight:600; color:var(--text); }
         .loc-chart-note  { font-size:11px; color:var(--subtle); margin:2px 0 12px; }
 
+        /* Applicant funnel — one shrinking bar per stage, width scaled to the
+           top-of-funnel count so drop-off is a visual read, not a table read.
+           Drop-off stages (rejected/auto-rejected/uncontacted) sit in their
+           own muted row underneath rather than breaking the funnel's taper. */
+        .loc-funnel { display:flex; flex-direction:column; gap:7px; margin-top:6px; }
+        .loc-funnel-row { display:grid; grid-template-columns:126px 1fr 64px; align-items:center; gap:12px; }
+        .loc-funnel-label { font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .loc-funnel-track { position:relative; height:26px; background:var(--surface-2); border-radius:6px; overflow:hidden; }
+        .loc-funnel-fill  { position:absolute; inset:0 auto 0 0; height:100%; border-radius:6px;
+                             display:flex; align-items:center; justify-content:flex-end; padding-right:8px;
+                             color:#fff; font-family:var(--mono); font-size:11px; font-weight:600;
+                             transition:width .4s ease; min-width:2px; }
+        .loc-funnel-fill.empty-fill { justify-content:flex-start; padding-left:8px; color:var(--subtle); }
+        .loc-funnel-pct { font-family:var(--mono); font-size:11px; color:var(--muted); text-align:right; }
+        .loc-funnel-divider { border-top:1px dashed var(--border); margin:4px 0 1px; padding-top:7px; }
+        .loc-funnel-subnote { font-size:10px; font-weight:600; color:var(--subtle); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+
         .loc-pill { display:inline-block; padding:2px 7px; border-radius:3px; font-size:10px; font-weight:600; margin:1px 2px 1px 0; white-space:nowrap; }
         .loc-pill.crit { background:var(--red-bg);   color:var(--red-text); }
         .loc-pill.warn { background:var(--amber-bg); color:var(--amber-text); }
@@ -960,6 +977,12 @@
                     <div id="accLocContent" class="hidden">
                         <div class="loc-tiles" id="accLocTiles"></div>
                         <div id="accLocInsight" class="loc-insight hidden"></div>
+
+                        <div id="accLocFunnelBox" class="loc-chart-box hidden" style="margin-bottom:16px;">
+                            <div class="loc-chart-title">Applicant funnel <span style="font-weight:500;color:var(--subtle);">— last 30 days, all locations</span></div>
+                            <div class="loc-chart-note" id="accLocFunnelNote"></div>
+                            <div id="accLocFunnel" class="loc-funnel"></div>
+                        </div>
 
                         <div class="loc-chart-grid">
                             <div class="loc-chart-box">
@@ -2239,12 +2262,68 @@
 
         renderAccLocTiles(rows);
         renderAccLocInsight(rows);
+        renderAccLocFunnel(rows);
         renderAccLocAppsChart(rows);
         renderLocMixChart('accLocMixChart', 'accMix', locMixCounts(rows));
         renderAccLocChatChart(rows);
         renderAccLocCoverage(rows);
         renderLocChips(rows);
         renderAccLocTable();
+    }
+
+    // Main taper (new -> hired), then a "not converted" group underneath for
+    // the stages that explain the drop-off rather than continue the funnel —
+    // keeping them out of the main taper means a big rejected count doesn't
+    // visually read as "a funnel stage," which it isn't.
+    const FUNNEL_STAGES = [
+        { key: 'funnel_new_30d',         label: 'New',         color: '#2563eb' },
+        { key: 'funnel_contacted_30d',   label: 'Contacted',   color: '#0ea5e9' },
+        { key: 'funnel_interviewed_30d', label: 'Interviewed', color: '#0d9488' },
+        { key: 'funnel_offered_30d',     label: 'Offered',     color: '#059669' },
+        { key: 'funnel_hired_30d',       label: 'Hired',       color: '#16a34a' },
+    ];
+    const FUNNEL_DROPOFF = [
+        { key: 'funnel_uncontacted_30d',   label: 'Uncontacted',   color: '#d97706' },
+        { key: 'funnel_rejected_30d',      label: 'Rejected',      color: '#dc2626' },
+        { key: 'funnel_auto_rejected_30d', label: 'Auto-rejected', color: '#b91c1c' },
+    ];
+
+    function renderAccLocFunnel(rows) {
+        const box = document.getElementById('accLocFunnelBox');
+        const allStages = [...FUNNEL_STAGES, ...FUNNEL_DROPOFF];
+        const hasData = rows.some(l => allStages.some(s => l[s.key] != null));
+        if (!hasData) { box.classList.add('hidden'); return; }
+        box.classList.remove('hidden');
+
+        const sum = key => rows.reduce((s, l) => s + (Number(l[key]) || 0), 0);
+        const stages   = FUNNEL_STAGES.map(s => ({ ...s, value: sum(s.key) }));
+        const dropoffs = FUNNEL_DROPOFF.map(s => ({ ...s, value: sum(s.key) }));
+        const top    = stages[0].value;
+        const maxVal = Math.max(top, ...dropoffs.map(d => d.value), 1);
+
+        const hired = stages[stages.length - 1].value;
+        document.getElementById('accLocFunnelNote').textContent = top > 0
+            ? `${Math.round((hired / top) * 1000) / 10}% new → hired · ${top.toLocaleString()} new applicant${top === 1 ? '' : 's'}`
+            : 'No new applicants in the last 30 days';
+
+        const row = (s, isFirst) => {
+            const pct = maxVal > 0 ? (s.value > 0 ? Math.max((s.value / maxVal) * 100, 3) : 0) : 0;
+            const pctOfTop = (!isFirst && top > 0) ? `${Math.round((s.value / top) * 100)}%` : '';
+            return `<div class="loc-funnel-row">
+                <div class="loc-funnel-label">${s.label}</div>
+                <div class="loc-funnel-track">
+                    <div class="loc-funnel-fill${s.value === 0 ? ' empty-fill' : ''}" style="width:${pct}%;${s.value > 0 ? `background:${s.color};` : ''}">${s.value.toLocaleString()}</div>
+                </div>
+                <div class="loc-funnel-pct">${pctOfTop}</div>
+            </div>`;
+        };
+
+        let html = stages.map((s, i) => row(s, i === 0)).join('');
+        if (dropoffs.some(d => d.value > 0)) {
+            html += `<div class="loc-funnel-divider"><div class="loc-funnel-subnote">Not converted</div></div>`;
+            html += dropoffs.map(s => row(s, false)).join('');
+        }
+        document.getElementById('accLocFunnel').innerHTML = html;
     }
 
     function renderAccLocTiles(rows) {

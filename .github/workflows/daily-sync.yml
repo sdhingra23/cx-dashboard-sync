@@ -36,6 +36,7 @@ jobs:
           METABASE_USER:        ${{ secrets.METABASE_USER }}
           METABASE_PASS:        ${{ secrets.METABASE_PASS }}
           CHARGEBEE_API_KEY:    ${{ secrets.CHARGEBEE_API_KEY }}
+          HUBSPOT_API_KEY:      ${{ secrets.HUBSPOT_API_KEY }}
           PENDO_API_KEY:        ${{ secrets.PENDO_API_KEY }}
           SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}

@@ -9,8 +9,10 @@
 //  2. Fetch all data sources in parallel:
 //       - All Metabase questions (Promise.all)
 //       - Chargebee customers + balances
+//       - HubSpot HM Account/HM Company/Location (Project Unified data)
 //       - Pendo NPS responses + account activity
-//  3. Normalize account names; merge into one record per account
+//  3. Seed the account universe from HubSpot HM Account, enrich with
+//     Chargebee (AM, balance, precise dates), merge in Metabase + Pendo
 //  4. Compute health scores and is_zero_roi
 //  5. Load yesterday's snapshots from Supabase
 //  6. Compute flags + diff (newly triggered → post to Slack)
@@ -23,6 +25,7 @@
 import { mbGetSession, buildMetabaseData, mbRunQuestion } from '../lib/metabase.js';
 import { buildLocationRows, buildLocationConfigByAccount, LOCATION_QUESTION_ID } from '../lib/locations.js';
 import { buildChargebeeData }                  from '../lib/chargebee.js';
+import { buildHubspotData }                    from '../lib/hubspot.js';
 import { fetchNpsResponses, fetchAccountActivity, fetchVisitorRoles, classifyRole } from '../lib/pendo.js';
 import { normalizeName }                       from '../lib/normalize.js';
 import { computeHealthBreakdown, healthStatus, computeHireRate, computeInterviewToHireRate,
@@ -265,7 +268,7 @@ async function main() {
   }
 
   // ── 2. Fetch all sources in parallel ────────────────────────
-  const [mbMap, rawLocationRows, cbRows, npsResponses, pendoActivity, visitorRoles, existingAccounts] = await Promise.all([
+  const [mbMap, rawLocationRows, cbRows, hubspotData, npsResponses, pendoActivity, visitorRoles, existingAccounts] = await Promise.all([
     mbToken
       ? buildMetabaseData(METABASE_QUESTIONS, mbToken).catch(e => {
           console.error('Metabase buildData failed:', e.message); return {};
@@ -284,6 +287,20 @@ async function main() {
     buildChargebeeData(process.env.CHARGEBEE_API_KEY).catch(e => {
       console.error('Chargebee failed:', e.message); return [];
     }),
+
+    // HubSpot (Project Unified data) — source of truth for account identity
+    // and ARR. Correctly rolls up multiple Chargebee subscriptions/customers
+    // onto one real account, which Chargebee's own company-name matching
+    // cannot do. Falls back to an empty result on failure so a HubSpot
+    // outage degrades to "no accounts this run" rather than crashing — the
+    // account universe genuinely depends on this now, so an empty result
+    // here means deleteStaleAccounts()'s <10-name safety guard kicks in
+    // rather than wiping the table.
+    process.env.HUBSPOT_API_KEY
+      ? buildHubspotData(process.env.HUBSPOT_API_KEY).catch(e => {
+          console.error('HubSpot fetch failed:', e.message); return { accounts: [], locations: [] };
+        })
+      : Promise.resolve({ accounts: [], locations: [] }),
 
     fetchNpsResponses(process.env.PENDO_API_KEY).catch(e => {
       console.error('Pendo NPS fetch failed:', e.message); return [];
@@ -334,45 +351,87 @@ async function main() {
     };
   }
 
-  console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}, location rows: ${rawLocationRows.length}`);
+  console.log(`Sources fetched — MB: ${Object.keys(mbMap).length} accounts, CB: ${cbRows.length} accounts, HS: ${hubspotData.accounts.length} accounts/${hubspotData.locations.length} locations, NPS responses: ${npsResponses.length}, Pendo accounts: ${Object.keys(pendoActivity).length}, location rows: ${rawLocationRows.length}`);
 
   // ── 3. Merge into one map keyed by normalized account name ───
   //
-  // Chargebee is the source of truth for which accounts exist on the
-  // dashboard (previously the AM assignments CSV). buildChargebeeData()
-  // only returns active, paying customers, so an account that churns (or
-  // drops to $0 MRR) simply stops appearing here — deleteStaleAccounts()
-  // below prunes it from Supabase the same run, and a newly signed customer
-  // appears the same way, both with zero manual list maintenance. Metabase
-  // and Pendo data are merged in only for accounts Chargebee already knows
-  // about — see hangingMbAccounts below for accounts that don't match.
+  // HubSpot's HM Account (synced from HigherMe's own database by a separate
+  // "Project Unified" sync) is the source of truth for which accounts exist
+  // on the dashboard and their ARR — previously Chargebee, before that the
+  // AM assignments CSV. HM Account correctly rolls up multiple Chargebee
+  // subscriptions/customers onto one real account, which Chargebee's own
+  // company-name matching could not do (see the duplicate-account
+  // investigation this replaces). Chargebee is now an ENRICHMENT layer only
+  // — AM assignment, outstanding balance, and precise dates aren't on HM
+  // Account, so those still come from Chargebee, matched by name — a
+  // Chargebee-only record with no matching HM Account no longer creates a
+  // dashboard entry on its own.
   const merged = {};
 
-  for (const cb of cbRows) {
-    const name = cb.account_name; // already normalized by buildChargebeeData
+  for (const hs of hubspotData.accounts) {
+    const name = normalizeName(hs.account_name);
     if (!name) continue;
 
-    const accountManager = cb.account_manager || 'Unassigned';
     merged[name] = {
-      account_name:        name,
-      account_id:          cb.account_id,
-      email:               cb.email,
-      arr:                 cb.arr ?? 0,
-      outstanding_balance: cb.outstanding_balance,
-      cb_customer_count:   cb.cb_customer_count,
-      create_date:         cb.create_date  ?? null,
-      renewal_date:        cb.renewal_date ?? null,
-      // AM assignment: Chargebee's cf_account_manager custom field.
-      account_manager:     accountManager,
-      is_managed:          accountManager.toLowerCase() !== 'unassigned',
-      // Parent brand: Chargebee's cf_parent_brand custom field — groups
-      // franchisee/location accounts under one brand for the brand rollup.
-      parent_brand:        cb.parent_brand ?? null,
+      account_name:  name,
+      hm_account_id: hs.hm_account_id,
+      arr:           hs.arr ?? 0,
+      create_date:   hs.create_date  ?? null,
+      renewal_date:  hs.renewal_date ?? null,
+      // Integration flags + engagement metrics from HM Company (associated
+      // to this HM Account) — null (not false) when no company is
+      // associated, i.e. unknown rather than verified absent.
+      has_netchex:      hs.has_netchex,
+      has_clearview:    hs.has_clearview,
+      has_7shifts:      hs.has_7shifts,
+      has_hr_alliance:  hs.has_hr_alliance,
+      has_checkr:       hs.has_checkr,
+      has_form_i9:      hs.has_form_i9,
+      has_hr_logics:    hs.has_hr_logics,
+      has_chickfila:    hs.has_cfa, // same integration as Metabase's "has_chickfila" (Chick-fil-A / VendorBridge), different name
+      has_paychex:      hs.has_paychex,
+      has_wizardline:   hs.has_wizardline,
+      has_iconblocks:   hs.has_iconblocks,
+      has_adp:          hs.has_adp,
+      onboarding_enabled: hs.has_onboarding,
+      templates_edited_count:        hs.templates_edited_count,
+      custom_questions_in_use_count: hs.custom_questions_in_use_count,
+      // Defaults — filled in by the Chargebee enrichment pass below when a
+      // match exists; an account with no Chargebee match keeps these.
+      account_manager: 'Unassigned',
+      is_managed:      false,
     };
   }
 
+  console.log(`HubSpot HM Accounts loaded: ${Object.keys(merged).length}`);
+
+  // Chargebee enrichment — AM, outstanding balance, precise dates, parent
+  // brand. Only applied to accounts HubSpot already seeded; a Chargebee
+  // customer with no matching HM Account is not added to the universe.
+  let cbMatched = 0;
+  for (const cb of cbRows) {
+    const name = cb.account_name; // already normalized by buildChargebeeData
+    if (!name || !merged[name]) continue;
+    cbMatched++;
+
+    const accountManager = cb.account_manager || 'Unassigned';
+    merged[name].account_id          = cb.account_id;
+    merged[name].email               = cb.email;
+    merged[name].outstanding_balance = cb.outstanding_balance;
+    merged[name].cb_customer_count   = cb.cb_customer_count;
+    // Chargebee's dates only fill gaps HM Account left null — HM Account's
+    // own started_at/renewal_date are the ones actually tied to the
+    // correctly-rolled-up account, not a single fragment of it.
+    if (merged[name].create_date == null)  merged[name].create_date  = cb.create_date  ?? null;
+    if (merged[name].renewal_date == null) merged[name].renewal_date = cb.renewal_date ?? null;
+    merged[name].account_manager = accountManager;
+    merged[name].is_managed      = accountManager.toLowerCase() !== 'unassigned';
+    merged[name].parent_brand    = cb.parent_brand ?? null;
+  }
+  console.log(`Chargebee enrichment matched: ${cbMatched}/${cbRows.length} Chargebee accounts to an HM Account`);
+
   const mergedValues = Object.values(merged);
-  console.log(`Chargebee accounts loaded: ${mergedValues.length} (${
+  console.log(`Account universe: ${mergedValues.length} (${
     mergedValues.filter(a => a.is_managed).length
   } managed, ${
     mergedValues.filter(a => !a.is_managed).length
@@ -420,23 +479,35 @@ async function main() {
     // 'job_boost_enabled', 'job_boost_last_used_days',
   ];
 
+  // These flags are now sourced from HubSpot HM Company — Metabase only
+  // fills them in when HubSpot had no associated company data at all
+  // (still null after seeding), and never overwrites a value HubSpot
+  // already provided, per "HubSpot is the source of truth" for this data.
+  const HUBSPOT_PREFERRED_KEYS = new Set([
+    'has_netchex', 'has_checkr', 'has_adp', 'has_7shifts',
+    'has_chickfila', 'has_paychex', 'has_clearview', 'has_hr_alliance',
+    'onboarding_enabled',
+  ]);
+
   const hangingMbAccounts = [];
   for (const [name, mb] of Object.entries(mbMap)) {
     if (!merged[name]) {
-      hangingMbAccounts.push(name); // in Metabase but not matched to a Chargebee account
+      hangingMbAccounts.push(name); // in Metabase but not matched to an HM Account
       continue;
     }
     for (const key of MB_AUTO_KEYS) {
-      if (mb[key] !== undefined) merged[name][key] = mb[key];
+      if (mb[key] === undefined) continue;
+      if (HUBSPOT_PREFERRED_KEYS.has(key) && merged[name][key] != null) continue;
+      merged[name][key] = mb[key];
     }
   }
 
   if (hangingMbAccounts.length > 0) {
-    console.warn(`\n⚠️  HANGING METABASE ACCOUNTS (${hangingMbAccounts.length}) — present in Metabase but not matched to a Chargebee customer:`);
+    console.warn(`\n⚠️  HANGING METABASE ACCOUNTS (${hangingMbAccounts.length}) — present in Metabase but not matched to an HM Account:`);
     for (const name of hangingMbAccounts) {
       console.warn(`   • ${name}`);
     }
-    console.warn('   → Check for a company-name mismatch between Metabase and Chargebee (normalizeName() may need a special case), or the account genuinely has no active Chargebee subscription.\n');
+    console.warn('   → Check for a company-name mismatch between Metabase and HubSpot\'s hm_account_name (normalizeName() may need a special case), or the account genuinely has no HM Account record yet.\n');
   }
 
   // ── 4. Build NPS per-account summary for merged map ──────────
@@ -584,6 +655,68 @@ async function main() {
     console.error('Location row build failed (health readiness falls back to job-level config):', e.message);
   }
 
+  // Merge in HubSpot's funnel/status data by location_id — the same numeric
+  // ID space Metabase's Q1513 already uses. Existing rows get the funnel
+  // columns added; a location HubSpot knows about that Metabase doesn't
+  // (or vice versa) still gets a row, since either source can lag the other.
+  const locationRowsById = new Map(locationRows.map(r => [r.location_id, r]));
+  let hsLocMerged = 0, hsLocAdded = 0, hsLocSkipped = 0;
+  for (const hl of hubspotData.locations) {
+    if (hl.location_id == null) continue;
+    const accountName = normalizeName(hl.account_name);
+    if (!accountName || !merged[accountName]) { hsLocSkipped++; continue; }
+
+    const funnelFields = {
+      hs_status:                      hl.status,
+      hs_paused_at:                   hl.paused_at,
+      hs_churned_at:                  hl.churned_at,
+      hs_deleted_at:                  hl.deleted_at,
+      hs_brand_id:                    hl.brand_id,
+      hs_brand_name:                  hl.brand_name,
+      active_job_count:               hl.active_job_count,
+      applicant_count_30d:            hl.applicant_count_30d,
+      completed_application_count:    hl.completed_application_count,
+      indeed_applicant_count_30d:     hl.indeed_applicant_count_30d,
+      jobs_without_wage_count:        hl.jobs_without_wage_count,
+      multi_status_application_count: hl.multi_status_application_count,
+      onboarded_employee_count:       hl.onboarded_employee_count,
+      last_requested_boost:           hl.last_requested_boost,
+      funnel_new_30d:                 hl.funnel_new_30d,
+      funnel_contacted_30d:           hl.funnel_contacted_30d,
+      funnel_uncontacted_30d:         hl.funnel_uncontacted_30d,
+      funnel_interviewed_30d:         hl.funnel_interviewed_30d,
+      funnel_offered_30d:             hl.funnel_offered_30d,
+      funnel_will_offer_30d:          hl.funnel_will_offer_30d,
+      funnel_hired_30d:               hl.funnel_hired_30d,
+      funnel_rejected_30d:            hl.funnel_rejected_30d,
+      funnel_auto_rejected_30d:       hl.funnel_auto_rejected_30d,
+      funnel_pending_onboarding_30d:  hl.funnel_pending_onboarding_30d,
+      funnel_future_candidate_30d:    hl.funnel_future_candidate_30d,
+      funnel_with_video_30d:          hl.funnel_with_video_30d,
+    };
+
+    const existing = locationRowsById.get(hl.location_id);
+    if (existing) {
+      Object.assign(existing, funnelFields);
+      hsLocMerged++;
+    } else {
+      const newRow = {
+        location_id: hl.location_id, account_id: null, account_name: accountName,
+        company_name: null, location_name: hl.location_name || null,
+        boosts_30d: 0, has_boosted_30d: false, published_jobs: 0, jobs_no_salary: 0,
+        signage_apps_30d: 0, indeed_status: null, indeed_apps_30d: 0, total_apps_30d: 0,
+        screenings_requested_30d: 0, screenings_completed_30d: 0, screenings_expired_30d: 0,
+        total_chats_30d: 0, chats_employer_replied_30d: 0, two_way_chats_30d: 0,
+        last_synced: SYNCED_AT,
+        ...funnelFields,
+      };
+      locationRows.push(newRow);
+      locationRowsById.set(hl.location_id, newRow);
+      hsLocAdded++;
+    }
+  }
+  console.log(`HubSpot location funnel: merged into ${hsLocMerged} existing row(s), added ${hsLocAdded} new row(s), skipped ${hsLocSkipped} (account not in universe)`);
+
   // Verbatim lookup: account_name → verbatims from the last 24h.
   // Built here rather than alongside the other flags because the health
   // score's sentiment factor reads the churn signal, and health is computed
@@ -720,6 +853,7 @@ async function main() {
   const accountRows = Object.values(merged).map(acc => ({
     account_name:                acc.account_name,
     account_id:                  acc.account_id                  ?? null,
+    hm_account_id:                acc.hm_account_id                ?? null,
     account_manager:             acc.account_manager             ?? 'Unassigned',
     is_managed:                  acc.is_managed                  ?? false,
     parent_brand:                acc.parent_brand                ?? null,
@@ -790,6 +924,14 @@ async function main() {
     has_paychex:                 acc.has_paychex                 ?? null,
     has_clearview:               acc.has_clearview               ?? null,
     has_hr_alliance:             acc.has_hr_alliance             ?? null,
+    // New from HubSpot HM Company — not available from Metabase, so no
+    // fallback source and no HUBSPOT_PREFERRED_KEYS entry needed.
+    has_form_i9:                 acc.has_form_i9                 ?? null,
+    has_hr_logics:               acc.has_hr_logics               ?? null,
+    has_wizardline:              acc.has_wizardline               ?? null,
+    has_iconblocks:              acc.has_iconblocks               ?? null,
+    templates_edited_count:        acc.templates_edited_count        ?? null,
+    custom_questions_in_use_count: acc.custom_questions_in_use_count ?? null,
     total_integrations:          acc.total_integrations          ?? null,
     two_way_pct:                 acc.two_way_pct                 ?? null,
     employer_response_rate_pct:  acc.employer_response_rate_pct  ?? null,
