@@ -1090,7 +1090,8 @@ async function main() {
       console.error(`Slack alert failed for ${acc.account_name} (${entries.map(f => f.flagKey).join(', ')}):`, e.message);
     }
   }
-  console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} Slack messages posted for ${urgentByAccount.size} accounts (urgent + managed), ${urgentAlertFailures} failed`);
+  const slackDisabled = String(process.env.DISABLE_SLACK || '').toLowerCase() === 'true';
+  console.log(`Urgent flag alerts: ${flagAlerts.length} newly triggered total, ${urgentAlertCount} Slack messages ${slackDisabled ? 'would have posted (DISABLE_SLACK set — not actually sent)' : 'posted'} for ${urgentByAccount.size} accounts (urgent + managed), ${urgentAlertFailures} failed`);
 
   // ── 12. Post Slack alerts for newly added escalation notes ───
   // Escalations are written to Supabase by the dashboard when an AM adds a note.
