@@ -1099,10 +1099,16 @@
                 aeSelect.innerHTML = '<option value="VP">🌍 Global Executive View</option>' +
                     ams.map(am => `<option value="${am}">👤 ${am}'s Portfolio</option>`).join('');
 
-                const brandNames = Object.keys(brandData).sort();
+                // Only the top 10 brands by ARR — 500+ brands in a dropdown
+                // isn't a usable list, and the ones that matter are the ones
+                // with real revenue concentration.
+                const topBrandNames = Object.values(brandData)
+                    .sort((a, b) => b.totalArr - a.totalArr)
+                    .slice(0, 10)
+                    .map(b => b.name);
                 const bSelect = document.getElementById('brandSelect');
                 bSelect.innerHTML = '<option value="">🏢 View by Brand...</option>' +
-                    brandNames.map(b => `<option value="${b}">${b} Portfolio</option>`).join('');
+                    topBrandNames.map(b => `<option value="${b}">${b} Portfolio</option>`).join('');
 
                 // Handle ?account= deep-link (from Slack alerts)
                 const urlAccount = new URLSearchParams(window.location.search).get('account');

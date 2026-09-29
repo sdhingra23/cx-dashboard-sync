@@ -98,10 +98,15 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── Brand rollup (grouped by Chargebee's cf_parent_brand) ─────────
+    // ── Brand rollup (grouped by HubSpot-derived parent_brand) ────────
     // Every account tagged to the same brand rolls up into one summary —
     // scale, ARR split, health distribution, and adoption/gap rates across
     // the whole brand, same shape the Brand Dashboard UI already renders.
+    //
+    // Only the top 10 brands by ARR are built out — several hundred brands
+    // exist once HubSpot became the brand source, and a long tail of
+    // low-ARR ones isn't useful in a dropdown or worth the per-brand work
+    // (feature adoption, health distribution, etc.) below.
     const brandGroups = {};
     for (const acc of data) {
       const brandName = acc.parent_brand;
@@ -109,8 +114,13 @@ export default async function handler(req, res) {
       (brandGroups[brandName] ||= []).push(acc);
     }
 
+    const topBrandEntries = Object.entries(brandGroups)
+      .sort(([, a], [, b]) =>
+        b.reduce((s, x) => s + (x.arr || 0), 0) - a.reduce((s, x) => s + (x.arr || 0), 0))
+      .slice(0, 10);
+
     const brands = {};
-    for (const [brandName, accs] of Object.entries(brandGroups)) {
+    for (const [brandName, accs] of topBrandEntries) {
       const totalArr = accs.reduce((s, a) => s + (a.arr || 0), 0);
       const managedAccs = accs.filter(a => a.is_managed === true);
       const managedArr = managedAccs.reduce((s, a) => s + (a.arr || 0), 0);
