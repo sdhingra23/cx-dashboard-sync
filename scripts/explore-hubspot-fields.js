@@ -33,7 +33,12 @@ async function main() {
     console.log(`── ${s.labels?.singular || s.name} (objectTypeId=${s.objectTypeId}, name=${s.name}) ──`);
     try {
       const props = await hsRequest(hsKey, `/crm/v3/properties/${s.objectTypeId}`);
-      reportProps(props.results);
+      // The whole object is custom-built, so hubspotDefined doesn't mean
+      // "not worth showing" the way it does on standard objects (Contacts/
+      // Companies) — it apparently marks properties defined at schema-
+      // creation time vs. added later via the UI, not built-in-vs-custom.
+      // List everything here instead of filtering.
+      reportProps(props.results, { isCustomObject: true });
     } catch (e) {
       console.log(`  ⚠️  Could not list properties: ${e.message}`);
     }
@@ -83,8 +88,23 @@ async function main() {
   console.log('');
 }
 
-function reportProps(list) {
+function reportProps(list, { isCustomObject = false } = {}) {
   if (!list || list.length === 0) { console.log('  (no properties)'); return; }
+
+  if (isCustomObject) {
+    // The whole object is a custom build — hubspotDefined isn't a useful
+    // signal here (see caller comment). hs_-prefixed properties are still
+    // internal plumbing regardless (hs_object_id, hs_created_by_user_id,
+    // hs_all_owner_ids, ...), so those are the only ones filtered out.
+    const business = list.filter(p => !p.name.startsWith('hs_'));
+    const plumbing = list.length - business.length;
+    console.log(`  ${list.length} total properties (${plumbing} internal hs_* fields omitted below)`);
+    for (const p of business.sort((a, b) => (a.groupName || '').localeCompare(b.groupName || ''))) {
+      console.log(`    ${p.name.padEnd(38)} "${p.label}"  [${p.type}/${p.fieldType}]${p.groupName ? ' — group: ' + p.groupName : ''}`);
+    }
+    return;
+  }
+
   const custom = list.filter(p => p.hubspotDefined === false);
   const standard = list.filter(p => p.hubspotDefined !== false);
   console.log(`  ${list.length} total properties (${custom.length} custom, ${standard.length} standard/default — defaults omitted below)`);
