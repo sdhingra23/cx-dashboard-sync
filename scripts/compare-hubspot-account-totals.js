@@ -78,12 +78,56 @@ async function main() {
   const accounts = await fetchAllHsObjects(hsKey, schema.objectTypeId, propList);
   console.log(`  Fetched ${accounts.length} HM Account records.\n`);
 
-  // Same "currently paying/active" definition as our Chargebee-side check:
-  // not cancelled. HubSpot import quirks mean a blank cell means "no
-  // change" not zero, but a freshly-synced record should have a real value.
+  // ── Filter check: don't assume "not cancelled" is the only thing that
+  // matters. Show the actual distribution of status and currency values
+  // before deciding what to include, since a blank/unexpected status or a
+  // non-USD currency would silently skew the ARR total either way.
+  console.log('── hm_chargebee_status distribution (all fetched records) ─────');
+  const statusCounts = new Map();
+  for (const a of accounts) {
+    const status = a.properties[resolved.chargebeeStatus] || '(blank)';
+    statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+  }
+  for (const [status, count] of [...statusCounts.entries()].sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${String(count).padStart(6)}  ${status}`);
+  }
+  console.log('');
+
+  if (resolved.currencyCode) {
+    console.log('── hm_currency_code distribution (all fetched records) ────────');
+    const currencyCounts = new Map();
+    for (const a of accounts) {
+      const cur = a.properties[resolved.currencyCode] || '(blank)';
+      currencyCounts.set(cur, (currencyCounts.get(cur) || 0) + 1);
+    }
+    for (const [cur, count] of [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${String(count).padStart(6)}  ${cur}`);
+    }
+    const nonUsd = accounts.filter(a => {
+      const cur = (a.properties[resolved.currencyCode] || '').toUpperCase();
+      return cur && cur !== 'USD';
+    });
+    if (nonUsd.length > 0) {
+      const nonUsdMrr = nonUsd.reduce((s, a) => s + (Number(a.properties[resolved.totalMrr]) || 0), 0);
+      console.log(`  ⚠️  ${nonUsd.length} account(s) not in USD, summing $${nonUsdMrr.toFixed(0)}/mo raw —`);
+      console.log('      these are being added to the total UNCONVERTED below. Treat the');
+      console.log('      final ARR comparison as approximate until this is handled properly.');
+    }
+    console.log('');
+  } else {
+    console.log('⚠️  Could not resolve a currency property — skipping currency check.\n');
+  }
+
+  // "active" per the spec's own three-value enum (active, non_renewing,
+  // cancelled) — only "cancelled" is excluded here, matching what the spec
+  // says Chargebee Status is "the field to filter on for whether an Account
+  // is currently churned." non_renewing accounts are still currently paying
+  // (they've just given notice), so they're kept, same as Chargebee's own
+  // "active" status include on our side. Blank status is treated as unknown
+  // and excluded conservatively rather than assumed active.
   const active = accounts.filter(a => {
     const status = (a.properties[resolved.chargebeeStatus] || '').toLowerCase();
-    return status !== 'cancelled';
+    return status === 'active' || status === 'non_renewing';
   });
   // hm_total_mrr is published in dollars, not cents — Project Unified's own
   // spec divides the internal (cents-stored) value before publishing to
@@ -98,8 +142,8 @@ async function main() {
   console.log(`  Fetched ${customers.length} active Chargebee customers, ${paying.length} paying.\n`);
 
   console.log('── Comparison ───────────────────────────────────────────────');
-  console.log(`  HubSpot HM Account (status != cancelled):  ${active.length} accounts, $${totalArrHubspot.toFixed(0)} ARR`);
-  console.log(`  Chargebee (active, mrr > 0):                ${paying.length} accounts, $${totalArrChargebee.toFixed(0)} ARR`);
+  console.log(`  HubSpot HM Account (active or non_renewing): ${active.length} accounts, $${totalArrHubspot.toFixed(0)} ARR`);
+  console.log(`  Chargebee (active, mrr > 0):                 ${paying.length} accounts, $${totalArrChargebee.toFixed(0)} ARR`);
   const diff = totalArrHubspot - totalArrChargebee;
   const diffPct = totalArrChargebee ? (diff / totalArrChargebee) * 100 : 0;
   console.log(`  Difference:                                 $${diff.toFixed(0)} (${diffPct >= 0 ? '+' : ''}${diffPct.toFixed(1)}%)`);
@@ -109,6 +153,34 @@ async function main() {
   console.log('  raw customer list does not. If the two are close, duplicates may not be');
   console.log('  explaining as much of the gap as hoped, and it\'s worth re-checking the');
   console.log('  known-correct number itself.');
+  console.log('');
+
+  // ── Spot-check known duplicate cases directly ───────────────────────
+  // Aggregate totals can move for reasons unrelated to duplicates (currency,
+  // rollup correctness). This checks whether HM Account actually collapses
+  // the specific cases we already confirmed are duplicates via Chargebee +
+  // Metabase — a much more direct test than comparing sums.
+  // Only cases we have real reason to believe are one account fragmented
+  // into multiple Chargebee records — NOT "Tim Hortons," which we already
+  // confirmed is a legitimate multi-location franchise network (35+ real,
+  // distinct accounts), not a duplicate. Applying a blanket "1 result =
+  // good" rule to that would misread a correct result as a problem.
+  console.log('── Spot-check: known duplicate cases in HM Account ─────────────');
+  const KNOWN_CASES = ['sensational', 'white castle', 'askar'];
+  for (const term of KNOWN_CASES) {
+    const matches = accounts.filter(a =>
+      (a.properties[resolved.accountName] || '').toLowerCase().includes(term)
+    );
+    console.log(`  "${term}" → ${matches.length} HM Account record(s)`);
+    for (const m of matches) {
+      const p = m.properties;
+      console.log(`      id=${p[resolved.accountId]}  name="${p[resolved.accountName]}"  mrr=$${p[resolved.totalMrr]}  status=${p[resolved.chargebeeStatus]}`);
+    }
+  }
+  console.log('');
+  console.log('  1 record per name here means HM Account is genuinely collapsing that');
+  console.log('  case. More than 1 means it isn\'t, for that specific case — this does not');
+  console.log('  generalize to names like Tim Hortons, where multiple real records is correct.');
 }
 
 // ── HubSpot helpers ─────────────────────────────────────────
