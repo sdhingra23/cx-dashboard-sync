@@ -579,6 +579,21 @@
             </div>
         </div>
 
+        <div class="panel">
+            <div class="panel-title"><span>🏢 Top 10 Brands by ARR</span></div>
+            <div style="overflow-y:auto;max-height:400px;">
+                <table class="data-table">
+                    <thead><tr>
+                        <th>Brand</th>
+                        <th style="text-align:center;">Franchisees</th>
+                        <th style="text-align:right;">Total ARR</th>
+                        <th style="text-align:right;">ARR at Risk</th>
+                    </tr></thead>
+                    <tbody id="vpTopBrandsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="panel" id="vpTablePanel">
             <div class="panel-title">
                 <span id="vpTableTitle">🚨 Top At-Risk Accounts by ARR</span>
@@ -1212,6 +1227,19 @@
                 <td style="font-weight:600;">${am.name}</td>
                 <td style="text-align:right;color:#b91c1c;font-weight:700;">${formatMoney(am.redArr)}</td>
                 <td style="text-align:center;"><span style="background:${am.zeroRoiCount > 3 ? '#fee2e2' : '#f3f4f6'};color:${am.zeroRoiCount > 3 ? '#b91c1c' : '#4b5563'};padding:4px 12px;border-radius:12px;font-weight:700;">${am.zeroRoiCount}</span></td>
+            </tr>`).join('');
+
+        // Top 10 brands by total ARR — click a row to jump straight into
+        // that brand's dashboard, same as picking it from the brand dropdown.
+        const topBrands = Object.values(brandData)
+            .sort((a, b) => b.totalArr - a.totalArr)
+            .slice(0, 10);
+        document.getElementById('vpTopBrandsBody').innerHTML = topBrands.map(b => `
+            <tr style="cursor:pointer;" onclick="document.getElementById('brandSelect').value='${b.name.replace(/'/g, "\\'")}'; handleBrandSelection();">
+                <td style="font-weight:600;">${b.name}</td>
+                <td style="text-align:center;">${b.franchiseeCount}</td>
+                <td style="text-align:right;font-weight:700;">${formatMoney(b.totalArr)}</td>
+                <td style="text-align:right;color:${b.redArr > 0 ? '#b91c1c' : '#9ca3af'};font-weight:${b.redArr > 0 ? '700' : '400'};">${formatMoney(b.redArr)}</td>
             </tr>`).join('');
 
         filterVpTable('default', false);
