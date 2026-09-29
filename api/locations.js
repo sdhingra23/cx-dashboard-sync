@@ -25,19 +25,32 @@ const AM_COLUMNS = [
   'jobs_no_salary', 'total_chats_30d', 'chats_employer_replied_30d',
 ].join(',');
 
+// Fires every page request concurrently instead of awaiting one page at a
+// time — a sequential while-loop adds up fast against the function's 10s
+// ceiling (vercel.json) once an AM's book spans many accounts' worth of
+// locations (e.g. after the Chargebee-enrichment fix correctly attributed
+// far more accounts to real AMs instead of "Unassigned"). Same count-first,
+// parallel-range approach as api/dashboard.js's fetchAllPaginated.
 async function paginate(sb, columns, applyFilter) {
-  let all  = [];
-  let page = 0;
-  while (true) {
+  const { count, error: countErr } = await applyFilter(sb.from('locations').select(columns, { count: 'exact', head: true }));
+  if (countErr) throw countErr;
+
+  const totalPages = Math.max(1, Math.ceil((count || 0) / PAGE));
+  const pagePromises = [];
+  for (let page = 0; page < totalPages; page++) {
     const from = page * PAGE;
-    const { data, error } = await applyFilter(sb.from('locations').select(columns))
-      .order('location_id', { ascending: true })
-      .range(from, from + PAGE - 1);
+    pagePromises.push(
+      applyFilter(sb.from('locations').select(columns))
+        .order('location_id', { ascending: true })
+        .range(from, from + PAGE - 1)
+    );
+  }
+
+  const results = await Promise.all(pagePromises);
+  let all = [];
+  for (const { data, error } of results) {
     if (error) throw error;
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    page++;
+    all = all.concat(data || []);
   }
   return all;
 }
@@ -88,11 +101,12 @@ export default async function handler(req, res) {
     // account_name travels in the query string — chunk it so a large book
     // doesn't overflow the URL.
     const CHUNK = 50;
-    let rows = [];
-    for (let i = 0; i < names.length; i += CHUNK) {
-      const chunk = names.slice(i, i + CHUNK);
-      rows = rows.concat(await paginate(sb, AM_COLUMNS, q => q.in('account_name', chunk)));
-    }
+    const chunks = [];
+    for (let i = 0; i < names.length; i += CHUNK) chunks.push(names.slice(i, i + CHUNK));
+    const chunkResults = await Promise.all(
+      chunks.map(chunk => paginate(sb, AM_COLUMNS, q => q.in('account_name', chunk)))
+    );
+    const rows = chunkResults.flat();
 
     const totals   = emptyTotals();
     const byAccount = {};
