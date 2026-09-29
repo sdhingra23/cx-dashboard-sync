@@ -2156,10 +2156,21 @@
         if (company && location && company !== location) return `${company} — ${location}`;
         return company || location || `Location ${l.location_id}`;
     }
-    const locDormant   = l => (l.published_jobs  || 0) === 0;
-    const locNoApps    = l => (l.total_apps_30d  || 0) === 0;
-    const locNoBoost   = l => !l.has_boosted_30d;
-    const locIndeedOff = l => String(l.indeed_status || '').trim().toLowerCase() !== 'enabled';
+    // Metabase Q1513 doesn't cover every account's locations (a name-mismatch
+    // "hanging" gap, same class of issue as the account-level one) — for
+    // those, every row arrives as a HubSpot-only stub with published_jobs/
+    // total_apps_30d hardcoded to 0, which isn't "confirmed zero," it's
+    // "Metabase has nothing here." Falling back to HubSpot's own
+    // active_job_count/applicant_count_30d avoids flagging a location as
+    // dormant/no-apps when it demonstrably has real activity in HubSpot.
+    // has_boosted_30d/indeed_status have no HubSpot equivalent at all, so a
+    // HubSpot-only row (l.company_name == null) can't be judged on those —
+    // treated as unknown (not a problem) rather than a false positive.
+    const locHasMbData = l => l.company_name != null;
+    const locDormant   = l => (l.published_jobs || 0) === 0 && (l.active_job_count    || 0) === 0;
+    const locNoApps    = l => (l.total_apps_30d || 0) === 0 && (l.applicant_count_30d || 0) === 0;
+    const locNoBoost   = l => locHasMbData(l) && !l.has_boosted_30d;
+    const locIndeedOff = l => locHasMbData(l) && String(l.indeed_status || '').trim().toLowerCase() !== 'enabled';
     const locNoReply   = l => (l.total_chats_30d || 0) > 0 && (l.chats_employer_replied_30d || 0) === 0;
     const locNeedsAttention = l => locDormant(l) || locNoApps(l);
 

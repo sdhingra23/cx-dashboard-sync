@@ -23,6 +23,7 @@ const AM_COLUMNS = [
   'location_id', 'account_name', 'company_name', 'location_name',
   'published_jobs', 'total_apps_30d', 'indeed_status', 'has_boosted_30d',
   'jobs_no_salary', 'total_chats_30d', 'chats_employer_replied_30d',
+  'active_job_count', 'applicant_count_30d',
 ].join(',');
 
 // Fires every page request concurrently instead of awaiting one page at a
@@ -55,10 +56,19 @@ async function paginate(sb, columns, applyFilter) {
   return all;
 }
 
-const isDormant   = l => (l.published_jobs || 0) === 0;
-const isNoApps    = l => (l.total_apps_30d || 0) === 0;
-const isNoBoost   = l => !l.has_boosted_30d;
-const isIndeedOff = l => String(l.indeed_status || '').trim().toLowerCase() !== 'enabled';
+// Metabase Q1513 doesn't cover every account's locations (a name-mismatch
+// "hanging" gap); those arrive as HubSpot-only rows with published_jobs/
+// total_apps_30d hardcoded to 0 — not "confirmed zero," just "Metabase has
+// nothing here." Fall back to HubSpot's own active_job_count/
+// applicant_count_30d so a location with real HubSpot activity isn't
+// flagged dormant/no-apps. has_boosted_30d/indeed_status have no HubSpot
+// equivalent, so a HubSpot-only row (company_name == null) can't be judged
+// on those — treated as unknown rather than a false positive.
+const hasMbData   = l => l.company_name != null;
+const isDormant   = l => (l.published_jobs || 0) === 0 && (l.active_job_count    || 0) === 0;
+const isNoApps    = l => (l.total_apps_30d || 0) === 0 && (l.applicant_count_30d || 0) === 0;
+const isNoBoost   = l => hasMbData(l) && !l.has_boosted_30d;
+const isIndeedOff = l => hasMbData(l) && String(l.indeed_status || '').trim().toLowerCase() !== 'enabled';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
