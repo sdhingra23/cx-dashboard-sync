@@ -85,8 +85,11 @@ async function main() {
     const status = (a.properties[resolved.chargebeeStatus] || '').toLowerCase();
     return status !== 'cancelled';
   });
-  const totalMrrCents = active.reduce((s, a) => s + (Number(a.properties[resolved.totalMrr]) || 0), 0);
-  const totalArrHubspot = (totalMrrCents / 100) * 12;
+  // hm_total_mrr is published in dollars, not cents — Project Unified's own
+  // spec divides the internal (cents-stored) value before publishing to
+  // HubSpot, unlike Chargebee's raw API below, which is still in cents.
+  const totalMrrDollars = active.reduce((s, a) => s + (Number(a.properties[resolved.totalMrr]) || 0), 0);
+  const totalArrHubspot = totalMrrDollars * 12;
 
   console.log('── Fetching Chargebee paying customers (fresh, same run) ──────');
   const customers = await fetchAllActiveCustomers(cbKey);
