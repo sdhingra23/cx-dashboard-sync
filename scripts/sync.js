@@ -388,6 +388,10 @@ async function main() {
       arr:           hs.arr ?? 0,
       create_date:   hs.create_date  ?? null,
       renewal_date:  hs.renewal_date ?? null,
+      // Derived from HubSpot Locations' brand_id/brand_name (see
+      // lib/hubspot.js) — Chargebee's cf_parent_brand below only fills this
+      // in when HubSpot has no single-brand answer for the account.
+      parent_brand:  hs.parent_brand ?? null,
       // Integration flags + engagement metrics from HM Company (associated
       // to this HM Account) — null (not false) when no company is
       // associated, i.e. unknown rather than verified absent.
@@ -444,9 +448,12 @@ async function main() {
     // correctly-rolled-up account, not a single fragment of it.
     if (merged[name].create_date == null)  merged[name].create_date  = cb.create_date  ?? null;
     if (merged[name].renewal_date == null) merged[name].renewal_date = cb.renewal_date ?? null;
+    // Same gap-fill treatment as the dates above — HubSpot's Location-derived
+    // brand (set above) wins when it has a single-brand answer; Chargebee's
+    // manually-tagged cf_parent_brand only fills in when HubSpot has none.
+    if (merged[name].parent_brand == null) merged[name].parent_brand = cb.parent_brand ?? null;
     merged[name].account_manager = accountManager;
     merged[name].is_managed      = accountManager.toLowerCase() !== 'unassigned';
-    merged[name].parent_brand    = cb.parent_brand ?? null;
   }
   console.log(`Chargebee enrichment matched: ${cbMatchedById + cbMatchedByName}/${cbRows.length} Chargebee accounts to an HM Account (${cbMatchedById} by exact customer id, ${cbMatchedByName} by name fallback)`);
 
