@@ -1151,7 +1151,7 @@ function flagMetricNote(flagKey, acc, yesterday) {
       return `NextMatch: ${acc.nextmatch_requested || 0} requests, 0 completions in 90 days`;
 
     case 'flag_billing_balance':
-      return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (newly appeared)`;
+      return `Outstanding balance: $${(acc.outstanding_balance || 0).toLocaleString()} (exceeds 10% of ARR, unpaid 7+ days)`;
 
     case 'flag_health_score_drop': {
       const prev  = yesterday?.health_score ?? acc._prevHealthScore;
