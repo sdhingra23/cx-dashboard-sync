@@ -76,6 +76,7 @@ async function main() {
       if (!hasParent && !hasChildren) standalone++;
     } catch (e) {
       errored++;
+      if (errored <= 3) console.log(`  ⚠️  error for id=${c.id}: ${e.message}`);
     }
     if (i > 0 && i % 20 === 0) {
       console.log(`  ...${i}/${sample.length} checked (parent:${withParent} children:${withChildren} standalone:${standalone} errored:${errored})`);
