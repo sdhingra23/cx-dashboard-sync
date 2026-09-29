@@ -1,0 +1,29 @@
+name: Check Customer 7272 Trace
+
+# One-off diagnostic — not on a schedule. Run manually from the Actions tab.
+on:
+  workflow_dispatch:
+    inputs:
+      customer_id:
+        description: 'Chargebee customer ID to trace'
+        type: string
+        default: '7272'
+
+jobs:
+  check:
+    name: Trace what happened to a Chargebee customer ID
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run script
+        env:
+          CHARGEBEE_API_KEY: ${{ secrets.CHARGEBEE_API_KEY }}
+        run: node scripts/check-customer-7272.js "${{ inputs.customer_id }}"
