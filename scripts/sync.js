@@ -367,10 +367,20 @@ async function main() {
   // Chargebee-only record with no matching HM Account no longer creates a
   // dashboard entry on its own.
   const merged = {};
+  // Raw Chargebee customer id -> merged{} key. Built from each HM Account's
+  // resolved chargebee_customer_ids (via the Subscription object's
+  // customer_id — see lib/hubspot.js), so Chargebee enrichment below can
+  // join by exact id first, only falling back to name-matching when no
+  // Subscription link exists for that account.
+  const customerIdToName = {};
 
   for (const hs of hubspotData.accounts) {
     const name = normalizeName(hs.account_name);
     if (!name) continue;
+
+    for (const custId of hs.chargebee_customer_ids || []) {
+      customerIdToName[custId] = name;
+    }
 
     merged[name] = {
       account_name:  name,
@@ -408,11 +418,21 @@ async function main() {
   // Chargebee enrichment — AM, outstanding balance, precise dates, parent
   // brand. Only applied to accounts HubSpot already seeded; a Chargebee
   // customer with no matching HM Account is not added to the universe.
-  let cbMatched = 0;
+  //
+  // Matched by exact Chargebee customer id first (via customerIdToName,
+  // built from HubSpot's Subscription object) — company-name text can
+  // differ between the two systems for the very same real account (e.g.
+  // Chargebee "White Castle" vs. HM Account "White Castle Corporate"; see
+  // the 7272 investigation), so id-matching catches accounts name-matching
+  // alone would silently miss. Falls back to name-matching only when none
+  // of a rollup's customer_ids resolve to an HM Account.
+  let cbMatchedById = 0;
+  let cbMatchedByName = 0;
   for (const cb of cbRows) {
-    const name = cb.account_name; // already normalized by buildChargebeeData
+    const idMatch = (cb.customer_ids || []).map(id => customerIdToName[id]).find(Boolean);
+    const name = idMatch || cb.account_name; // cb.account_name already normalized by buildChargebeeData
     if (!name || !merged[name]) continue;
-    cbMatched++;
+    if (idMatch) cbMatchedById++; else cbMatchedByName++;
 
     const accountManager = cb.account_manager || 'Unassigned';
     merged[name].account_id          = cb.account_id;
@@ -428,7 +448,7 @@ async function main() {
     merged[name].is_managed      = accountManager.toLowerCase() !== 'unassigned';
     merged[name].parent_brand    = cb.parent_brand ?? null;
   }
-  console.log(`Chargebee enrichment matched: ${cbMatched}/${cbRows.length} Chargebee accounts to an HM Account`);
+  console.log(`Chargebee enrichment matched: ${cbMatchedById + cbMatchedByName}/${cbRows.length} Chargebee accounts to an HM Account (${cbMatchedById} by exact customer id, ${cbMatchedByName} by name fallback)`);
 
   const mergedValues = Object.values(merged);
   console.log(`Account universe: ${mergedValues.length} (${
