@@ -687,11 +687,11 @@ async function main() {
   // columns added; a location HubSpot knows about that Metabase doesn't
   // (or vice versa) still gets a row, since either source can lag the other.
   const locationRowsById = new Map(locationRows.map(r => [r.location_id, r]));
-  let hsLocMerged = 0, hsLocAdded = 0, hsLocSkipped = 0;
+  let hsLocMerged = 0, hsLocAdded = 0, hsLocSkippedNoAccount = 0, hsLocSkippedInactive = 0;
   for (const hl of hubspotData.locations) {
     if (hl.location_id == null) continue;
     const accountName = normalizeName(hl.account_name);
-    if (!accountName || !merged[accountName]) { hsLocSkipped++; continue; }
+    if (!accountName || !merged[accountName]) { hsLocSkippedNoAccount++; continue; }
 
     const funnelFields = {
       hs_status:                      hl.status,
@@ -726,6 +726,16 @@ async function main() {
     if (existing) {
       Object.assign(existing, funnelFields);
       hsLocMerged++;
+    } else if ((hl.status || '').toLowerCase() !== 'active') {
+      // HubSpot never deletes a Location record — a closed one is kept
+      // forever, just marked Paused/Deleted/Churned, for history (see the
+      // Project Unified spec). A HubSpot-only row therefore isn't
+      // necessarily a *current* location Metabase missed; it's often a
+      // historical one Metabase correctly never had. Adding it unfiltered
+      // inflated an account's location count well past its real, current
+      // total (e.g. 449 vs. the correct 361 for one account) — only add a
+      // HubSpot-only row when it's actually live.
+      hsLocSkippedInactive++;
     } else {
       const newRow = {
         location_id: hl.location_id, account_id: null, account_name: accountName,
@@ -742,7 +752,7 @@ async function main() {
       hsLocAdded++;
     }
   }
-  console.log(`HubSpot location funnel: merged into ${hsLocMerged} existing row(s), added ${hsLocAdded} new row(s), skipped ${hsLocSkipped} (account not in universe)`);
+  console.log(`HubSpot location funnel: merged into ${hsLocMerged} existing row(s), added ${hsLocAdded} new row(s), skipped ${hsLocSkippedNoAccount} (account not in universe) + ${hsLocSkippedInactive} (HubSpot-only, not Active)`);
 
   // Verbatim lookup: account_name → verbatims from the last 24h.
   // Built here rather than alongside the other flags because the health
