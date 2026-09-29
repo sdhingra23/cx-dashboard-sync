@@ -4,8 +4,8 @@ name: Check Name Mismatch
 on:
   workflow_dispatch:
     inputs:
-      customer_id:
-        description: 'Chargebee customer ID to check'
+      search_term:
+        description: 'Name (or part of one) to search for in both systems'
         type: string
         required: true
 
@@ -27,4 +27,4 @@ jobs:
         env:
           CHARGEBEE_API_KEY: ${{ secrets.CHARGEBEE_API_KEY }}
           HUBSPOT_API_KEY:   ${{ secrets.HUBSPOT_API_KEY }}
-        run: node scripts/check-name-mismatch.js "${{ inputs.customer_id }}"
+        run: node scripts/check-name-mismatch.js "${{ inputs.search_term }}"
