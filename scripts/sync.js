@@ -736,6 +736,13 @@ async function main() {
       // total (e.g. 449 vs. the correct 361 for one account) — only add a
       // HubSpot-only row when it's actually live.
       hsLocSkippedInactive++;
+    } else if (!hl.location_name) {
+      // Status alone wasn't enough — some HubSpot-only Locations marked
+      // "Active" still had no location_name at all (verified: every one of
+      // 40 extra rows on one account had a null name), a pattern real,
+      // current locations don't share. Treat a nameless "Active" record as
+      // a stub rather than a real current location.
+      hsLocSkippedInactive++;
     } else {
       const newRow = {
         location_id: hl.location_id, account_id: null, account_name: accountName,
